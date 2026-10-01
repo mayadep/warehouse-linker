@@ -5,7 +5,8 @@ import Modal from "@/components/Modal";
 import { newRequestId } from "@/lib/request-id";
 import { finishOrderAction, processOrderAction, type OrderActionState } from "@/modules/order/actions";
 import { ORDER_PROCESS_LABELS, type OrderStatusCode, type OrderTypeCode } from "@/modules/order/codes";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 export type ProcessLine = {
   id: string;
   sku: string;
@@ -79,14 +80,13 @@ function ProcessForm({
                   <td>{l.remaining.toLocaleString()}</td>
                   {type === "SALES" && <td className={l.stock < l.remaining ? "text-amber-700" : ""}>{l.stock.toLocaleString()}</td>}
                   <td>
-                    <input
+                    <Input
                       type="number"
                       min={0}
                       max={l.remaining}
                       value={qty[l.id]}
                       onChange={(e) => setQty((q) => ({ ...q, [l.id]: e.target.value }))}
-                      className={`w-full rounded border px-2 py-1 ${over ? "border-red-400" : "border-gray-300"}`}
-                    />
+                      className={`w-full rounded border px-2 py-1 ${over ? "border-red-400" : "border-gray-300"}`} />
                   </td>
                 </tr>
               );
@@ -97,21 +97,21 @@ function ProcessForm({
         <div className="flex gap-3">
           <label className="flex-1">
             {label}일시 (비우면 현재)
-            <input name="at" type="datetime-local" className="w-full rounded border border-gray-300 px-2 py-1.5" />
+            <Input className="w-full" name="at" type="datetime-local" />
           </label>
           <label className="flex-1">
             비고 (선택)
-            <input name="memo" maxLength={500} className="w-full rounded border border-gray-300 px-2 py-1.5" />
+            <Input className="w-full" name="memo" maxLength={500} />
           </label>
         </div>
         {state.status === "error" && <p className="text-red-600">{state.message}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={onClose} disabled={pending}>
             취소
-          </button>
-          <button disabled={pending} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-gray-400">
+          </Button>
+          <Button type="submit" disabled={pending}>
             {pending ? "처리 중..." : `${label} 처리`}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -147,26 +147,24 @@ export default function OrderActions({
     <div className="flex flex-col items-end gap-2">
       <div className="flex flex-wrap justify-end gap-2">
         {active && pending.length > 0 && (
-          <button
+          <Button 
             type="button"
             onClick={() => {
               setFlash("");
               setOpen(true);
-            }}
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-          >
+            }}>
             {ORDER_PROCESS_LABELS[type]} 처리
-          </button>
+          </Button>
         )}
         {status === "PARTIAL" && (
-          <button type="button" onClick={() => setConfirm("close")} className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={() => setConfirm("close")}>
             잔량 종결
-          </button>
+          </Button>
         )}
         {status === "OPEN" && !hasProcessed && (
-          <button type="button" onClick={() => setConfirm("cancel")} className="rounded border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50">
+          <Button variant="destructive" type="button" onClick={() => setConfirm("cancel")}>
             주문 취소
-          </button>
+          </Button>
         )}
       </div>
 
@@ -186,9 +184,9 @@ export default function OrderActions({
           <button disabled={fPending} className="rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-700">
             확인
           </button>
-          <button type="button" onClick={() => setConfirm(null)} className="rounded border px-3 py-1 hover:bg-white">
+          <Button variant="outline" size="sm" type="button" onClick={() => setConfirm(null)}>
             아니오
-          </button>
+          </Button>
         </form>
       )}
 

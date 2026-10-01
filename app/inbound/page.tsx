@@ -73,10 +73,10 @@ export default async function InboundPage() {
 
   return (
     <div className="max-w-4xl">
-      <h2 className="mb-6 text-xl font-bold">입고</h2>
+      <h2 className="mb-6 text-2xl font-semibold tracking-tight">입고</h2>
 
       {products.length === 0 ? (
-        <p className="rounded border border-yellow-300 bg-yellow-50 p-4 text-sm">
+        <p className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 p-4 text-sm">
           DB에 등록된 상품이 없습니다. 터미널에서 <code>npx prisma db seed</code>를
           실행해 샘플 상품을 넣어주세요.
         </p>

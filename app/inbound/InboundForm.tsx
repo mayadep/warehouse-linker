@@ -6,7 +6,9 @@ import {
   type InboundActionState,
 } from "@/modules/inbound/actions";
 import { newRequestId } from "@/lib/request-id";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type InboundProductOption = {
   id: string;
   sku: string;
@@ -18,7 +20,7 @@ export type InboundProductOption = {
 
 const initialState: InboundActionState = { status: "idle", message: "" };
 
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input = "w-full";
 
 export default function InboundForm({
   products,
@@ -85,19 +87,17 @@ export default function InboundForm({
     >
       <div className="text-sm">
         <span>상품</span>
-        <input
+        <Input
           className={`${input} mb-2`}
           placeholder="코드·품명·분류로 검색"
           value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-        />
-        <select
+          onChange={(e) => setKeyword(e.target.value)} />
+        <NativeSelect
           name="productId"
           className={input}
           value={productId}
           onChange={(e) => setProductId(e.target.value)}
-          required
-        >
+          required>
           <option value="">-- 상품 선택 ({filtered.length}개) --</option>
           {selected && !filtered.includes(selected) && (
             <option value={selected.id}>
@@ -109,7 +109,7 @@ export default function InboundForm({
               [{p.sku}] {p.name} · {p.category}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         {selected && (
           <p className="mt-1 text-xs text-gray-500">
             현재고 {selected.stock.toLocaleString()}
@@ -122,27 +122,25 @@ export default function InboundForm({
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           입고 수량
-          <input
+          <Input
             name="quantity"
             type="number"
             min={1}
             step={1}
             required
             className={input}
-            placeholder="0"
-          />
+            placeholder="0" />
           {err.quantity && <span className="mt-1 block text-xs text-red-600">{err.quantity}</span>}
         </label>
         <label className="flex-1 text-sm">
           입고 단가 (원, 선택)
-          <input
+          <Input
             name="unitCost"
             type="number"
             min={0}
             step={1}
             className={input}
-            placeholder="0"
-          />
+            placeholder="0" />
           {err.unitCost && <span className="mt-1 block text-xs text-red-600">{err.unitCost}</span>}
         </label>
       </div>
@@ -150,28 +148,26 @@ export default function InboundForm({
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           공급처 (선택)
-          <input name="supplier" maxLength={100} className={input} placeholder="○○식자재" />
+          <Input name="supplier" maxLength={100} className={input} placeholder="○○식자재" />
           {err.supplier && <span className="mt-1 block text-xs text-red-600">{err.supplier}</span>}
         </label>
         <label className="flex-1 text-sm">
           입고일시 (비우면 현재 시각)
-          <input name="receivedAt" type="datetime-local" className={input} />
+          <Input name="receivedAt" type="datetime-local" className={input} />
           {err.receivedAt && <span className="mt-1 block text-xs text-red-600">{err.receivedAt}</span>}
         </label>
       </div>
 
       <label className="text-sm">
         비고 (선택)
-        <input name="memo" maxLength={500} className={input} />
+        <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className="mt-1 block text-xs text-red-600">{err.memo}</span>}
       </label>
 
-      <button
-        disabled={pending}
-        className="rounded bg-blue-600 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400"
-      >
+      <Button type="submit"
+        disabled={pending}>
         {pending ? "처리 중..." : "입고 등록"}
-      </button>
+      </Button>
 
       {state.status === "confirm" ? (
         <div
@@ -183,7 +179,7 @@ export default function InboundForm({
             name="confirmDuplicate"
             value="1"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700 disabled:bg-gray-400"
+            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             그래도 등록
           </button>

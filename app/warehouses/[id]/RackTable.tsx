@@ -50,10 +50,10 @@ function RackLayout({
                   <td
                     key={b}
                     title={item ? `[${item.sku}] ${item.name}` : "비어 있음"}
-                    className={`border border-gray-300 px-1 py-2 ${item ? "bg-blue-50" : "bg-gray-50"}`}
+                    className={`border border-gray-300 px-1 py-2 ${item ? "bg-indigo-50" : "bg-gray-50"}`}
                   >
                     <span className="block font-mono text-[11px] text-gray-500">{code}</span>
-                    <span className={`block truncate ${item ? "font-medium text-blue-800" : "text-gray-300"}`}>
+                    <span className={`block truncate ${item ? "font-medium text-indigo-800" : "text-gray-300"}`}>
                       {item ? item.name : "비어 있음"}
                     </span>
                   </td>
@@ -88,9 +88,10 @@ export default function RackTable({
 
   return (
     <>
-      <table className="w-full text-center text-sm">
+      <div className="overflow-x-auto rounded-lg border">
+<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
         <thead>
-          <tr className="border-b">
+          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
             <th className="py-2">랙</th>
             <th>단 수</th>
             <th>단별 구획</th>
@@ -109,12 +110,12 @@ export default function RackTable({
             </tr>
           )}
           {racks.map((r) => (
-            <tr key={r.id} onClick={() => setOpenId(r.id)} className="cursor-pointer border-b hover:bg-blue-50">
+            <tr key={r.id} onClick={() => setOpenId(r.id)} className="cursor-pointer border-b hover:bg-indigo-50">
               <td className="py-2 font-mono font-medium">{rackCode(r.number)}</td>
               <td>{r.levels}</td>
               <td>{r.binsPerLevel}</td>
               <td>{r.locationCount.toLocaleString()}</td>
-              <td className={usedByRack.get(r.id) ? "text-blue-700" : "text-gray-400"}>
+              <td className={usedByRack.get(r.id) ? "text-indigo-700" : "text-gray-400"}>
                 {(usedByRack.get(r.id) ?? 0).toLocaleString()}
               </td>
               <td className="font-mono text-gray-600">
@@ -123,7 +124,7 @@ export default function RackTable({
               <td>
                 <button
                   type="button"
-                  className="text-blue-700 hover:underline"
+                  className="text-indigo-700 hover:underline"
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpenId(r.id);
@@ -136,6 +137,7 @@ export default function RackTable({
           ))}
         </tbody>
       </table>
+</div>
 
       {open && (
         <Modal

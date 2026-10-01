@@ -1,4 +1,5 @@
 // 상품 등록 입력값 검증 (서버에서 반드시 실행)
+import { DEFAULT_SAFETY_STOCK } from "./defaults";
 import { isProductUnit, type ProductUnitCode } from "./units";
 
 export const PRODUCT_LIMITS = {
@@ -7,6 +8,7 @@ export const PRODUCT_LIMITS = {
   maxCategoryLength: 50,
   maxPrice: 100_000_000,
   maxBoxQty: 10_000,
+  maxSafetyStock: 1_000_000,
 } as const;
 
 export type ProductInput = {
@@ -16,6 +18,7 @@ export type ProductInput = {
   price: number;
   baseUnit: ProductUnitCode;
   boxQty: number;
+  safetyStock: number;
   trackExpiry: boolean;
 };
 
@@ -82,12 +85,22 @@ export function parseProductForm(fd: FormData): ProductParseResult {
     else boxQty = Number(qtyRaw);
   }
 
+  // 안전재고: 비우면 기본값
+  const safetyRaw = text(fd, "safetyStock").replaceAll(",", "");
+  let safetyStock = DEFAULT_SAFETY_STOCK;
+  if (safetyRaw) {
+    if (!INT_RE.test(safetyRaw)) errors.safetyStock = "안전재고는 0 이상의 정수여야 합니다.";
+    else if (Number(safetyRaw) > PRODUCT_LIMITS.maxSafetyStock)
+      errors.safetyStock = `안전재고는 ${PRODUCT_LIMITS.maxSafetyStock.toLocaleString()} 이하여야 합니다.`;
+    else safetyStock = Number(safetyRaw);
+  }
+
   // 체크박스: 체크 시 "on", 미체크 시 전송되지 않음
   const trackExpiry = fd.get("trackExpiry") === "on";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
-    data: { sku, name, category, price, baseUnit, boxQty, trackExpiry },
+    data: { sku, name, category, price, baseUnit, boxQty, safetyStock, trackExpiry },
   };
 }

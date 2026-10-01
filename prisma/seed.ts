@@ -3,6 +3,7 @@
 // 실행: npx prisma db seed
 import { PrismaClient, type ProductUnit } from "@prisma/client";
 import { sampleProducts } from "../data/sampleProducts";
+import { DEFAULT_SAFETY_STOCK } from "../modules/product/defaults";
 import { seedDefaultWarehouses } from "../modules/warehouse/builder";
 
 const prisma = new PrismaClient();
@@ -24,6 +25,7 @@ async function main() {
         category: p.category,
         price: 0,
         stock: 0,
+        safetyStock: DEFAULT_SAFETY_STOCK,
         baseUnit: p.baseUnit as ProductUnit,
         boxQty: p.baseUnit === "BOX" ? 1 : p.boxQty,
         trackExpiry: p.trackExpiry,

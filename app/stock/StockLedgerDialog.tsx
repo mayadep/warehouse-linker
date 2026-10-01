@@ -9,13 +9,14 @@ import {
 } from "@/modules/stock/actions";
 import type { StockRow } from "./StockTable";
 import LocationEditor, { type WarehouseOption } from "./LocationEditor";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 const initialState: SafetyStockActionState = { status: "idle", message: "" };
 
 const TYPE_STYLE: Record<string, string> = {
-  INBOUND: "text-blue-700",
+  INBOUND: "text-indigo-700",
   OUTBOUND: "text-red-700",
-  INBOUND_CORRECTION: "text-blue-500",
+  INBOUND_CORRECTION: "text-indigo-500",
   OUTBOUND_CORRECTION: "text-red-500",
   ADJUST: "text-gray-700",
 };
@@ -62,7 +63,7 @@ export default function StockLedgerDialog({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="m-auto w-full max-w-4xl rounded-lg p-0 shadow-xl backdrop:bg-black/40"
+      className="m-auto w-full max-w-4xl rounded-xl border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-[2px]"
       aria-labelledby="ledger-title"
     >
       <div className="flex flex-col gap-4 p-6">
@@ -92,22 +93,18 @@ export default function StockLedgerDialog({
           <input type="hidden" name="productId" value={row.id} />
           <label className="flex items-center gap-2">
             안전재고
-            <input
+            <Input className="w-28 text-sm h-8"
               name="safetyStock"
               type="number"
               min={0}
               step={1}
-              defaultValue={row.safetyStock}
-              className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
-            />
+              defaultValue={row.safetyStock} />
             {row.baseUnit}
           </label>
-          <button
-            disabled={pending}
-            className="rounded bg-blue-600 px-3 py-1 text-white hover:bg-blue-700 disabled:bg-gray-400"
-          >
+          <Button size="sm" type="submit"
+            disabled={pending}>
             {pending ? "저장 중..." : "저장"}
-          </button>
+          </Button>
           <span className="text-xs text-gray-500">현재고가 이 값 이하이면 &apos;부족&apos;으로 표시됩니다. (0 = 사용 안 함)</span>
           {state.message && (
             <span
@@ -157,7 +154,7 @@ export default function StockLedgerDialog({
                 {ledger.total > ledger.entries.length && ` 중 최근 ${ledger.entries.length}건`}
               </p>
               <table className="w-full text-center text-sm">
-                <thead className="sticky top-0 bg-white">
+                <thead className="sticky top-0 bg-background">
                   <tr className="border-b">
                     <th className="py-2">처리일시</th>
                     <th>구분</th>
@@ -180,7 +177,7 @@ export default function StockLedgerDialog({
                     <tr key={e.id} className="border-b">
                       <td className="whitespace-nowrap py-1.5">{e.createdAtText}</td>
                       <td className={TYPE_STYLE[e.type] ?? ""}>{e.typeLabel}</td>
-                      <td className={e.quantity > 0 ? "text-blue-700" : "text-red-700"}>
+                      <td className={e.quantity > 0 ? "text-indigo-700" : "text-red-700"}>
                         {e.quantity > 0 ? "+" : ""}
                         {e.quantity.toLocaleString()}
                       </td>

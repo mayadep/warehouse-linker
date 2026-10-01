@@ -11,9 +11,11 @@ import {
   locationCode,
   type StorageTypeCode,
 } from "@/modules/warehouse/codes";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 const initialState: WarehouseActionState = { status: "idle", message: "" };
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 function CreateForm({
@@ -66,24 +68,24 @@ function CreateForm({
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             보관유형
-            <select name="storageType" className={input} value={type} onChange={(e) => onType(e.target.value as StorageTypeCode)}>
+            <NativeSelect name="storageType" className={input} value={type} onChange={(e) => onType(e.target.value as StorageTypeCode)}>
               {STORAGE_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {STORAGE_TYPE_LABELS[t]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             {err.storageType && <span className={errText}>{err.storageType}</span>}
           </label>
           <label className="flex-1 text-sm">
             창고코드
-            <input name="code" className={`${input} uppercase`} maxLength={L.maxCodeLength} value={code} onChange={(e) => onCode(e.target.value)} />
+            <Input name="code" className={`${input} uppercase`} maxLength={L.maxCodeLength} value={code} onChange={(e) => onCode(e.target.value)} />
             {err.code && <span className={errText}>{err.code}</span>}
           </label>
         </div>
         <label className="text-sm">
           창고명
-          <input
+          <Input
             name="name"
             className={input}
             maxLength={L.maxNameLength}
@@ -91,30 +93,29 @@ function CreateForm({
             onChange={(e) => {
               setNameTouched(true);
               setName(e.target.value);
-            }}
-          />
+            }} />
           {err.name && <span className={errText}>{err.name}</span>}
         </label>
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             처음 만들 랙 수
-            <input name="rackCount" type="number" min={0} max={L.maxRackNumber} className={input} value={rackCount} onChange={(e) => setRackCount(e.target.value)} />
+            <Input name="rackCount" type="number" min={0} max={L.maxRackNumber} className={input} value={rackCount} onChange={(e) => setRackCount(e.target.value)} />
             {err.rackCount && <span className={errText}>{err.rackCount}</span>}
           </label>
           <label className="flex-1 text-sm">
             단 수
-            <input name="levels" type="number" min={1} max={L.maxLevels} className={input} value={levels} onChange={(e) => setLevels(e.target.value)} />
+            <Input name="levels" type="number" min={1} max={L.maxLevels} className={input} value={levels} onChange={(e) => setLevels(e.target.value)} />
             {err.levels && <span className={errText}>{err.levels}</span>}
           </label>
           <label className="flex-1 text-sm">
             단별 구획 수
-            <input name="binsPerLevel" type="number" min={1} max={L.maxBinsPerLevel} className={input} value={bins} onChange={(e) => setBins(e.target.value)} />
+            <Input name="binsPerLevel" type="number" min={1} max={L.maxBinsPerLevel} className={input} value={bins} onChange={(e) => setBins(e.target.value)} />
             {err.binsPerLevel && <span className={errText}>{err.binsPerLevel}</span>}
           </label>
         </div>
         <label className="text-sm">
           비고 (선택)
-          <input name="memo" maxLength={L.maxMemoLength} className={input} />
+          <Input name="memo" maxLength={L.maxMemoLength} className={input} />
           {err.memo && <span className={errText}>{err.memo}</span>}
         </label>
 
@@ -133,12 +134,12 @@ function CreateForm({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending} className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={onClose} disabled={pending}>
             취소
-          </button>
-          <button disabled={pending} className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400">
+          </Button>
+          <Button type="submit" disabled={pending}>
             {pending ? "생성 중..." : "창고 추가"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -152,16 +153,14 @@ export default function WarehouseCreateButton({ suggestions }: { suggestions: Re
     <>
       <div className="flex items-center gap-3">
         {flash && <span aria-live="polite" className="text-sm text-green-700">{flash}</span>}
-        <button
+        <Button 
           type="button"
           onClick={() => {
             setFlash("");
             setOpen(true);
-          }}
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-        >
+          }}>
           + 창고 추가
-        </button>
+        </Button>
       </div>
       {open && (
         <CreateForm

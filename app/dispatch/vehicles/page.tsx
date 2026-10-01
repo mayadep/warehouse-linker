@@ -9,7 +9,7 @@ export default async function VehiclesPage() {
   return (
     <div className="max-w-5xl">
       <Link href="/dispatch" className="text-sm text-gray-500 hover:underline">‹ 배차관리</Link>
-      <h2 className="mt-2 mb-4 text-xl font-bold">차량 관리</h2>
+      <h2 className="mt-2 mb-4 text-2xl font-semibold tracking-tight">차량 관리</h2>
       <VehicleManager
         vehicles={vehicles.map((v) => ({
           id: v.id,

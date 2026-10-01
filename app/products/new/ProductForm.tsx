@@ -10,10 +10,13 @@ import {
   PRODUCT_UNIT_LABELS,
   type ProductUnitCode,
 } from "@/modules/product/units";
-
+import { DEFAULT_SAFETY_STOCK } from "@/modules/product/defaults";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 const initialState: ProductActionState = { status: "idle", message: "" };
 
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 export default function ProductForm({ categories }: { categories: string[] }) {
@@ -45,25 +48,23 @@ export default function ProductForm({ categories }: { categories: string[] }) {
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           품목코드
-          <input
+          <Input
             name="sku"
             className={`${input} uppercase`}
             required
             maxLength={30}
-            placeholder="SAU-009"
-          />
+            placeholder="SAU-009" />
           {err.sku && <span className={errText}>{err.sku}</span>}
         </label>
         <label className="flex-1 text-sm">
           분류
-          <input
+          <Input
             name="category"
             className={input}
             required
             maxLength={50}
             list="product-categories"
-            placeholder="소스류"
-          />
+            placeholder="소스류" />
           <datalist id="product-categories">
             {categories.map((c) => (
               <option key={c} value={c} />
@@ -75,25 +76,24 @@ export default function ProductForm({ categories }: { categories: string[] }) {
 
       <label className="text-sm">
         품명
-        <input name="name" className={input} required maxLength={100} placeholder="케찹 3.2kg" />
+        <Input name="name" className={input} required maxLength={100} placeholder="케찹 3.2kg" />
         {err.name && <span className={errText}>{err.name}</span>}
       </label>
 
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           기본단위
-          <select
+          <NativeSelect
             name="baseUnit"
             className={input}
             value={baseUnit}
-            onChange={(e) => setBaseUnit(e.target.value as ProductUnitCode)}
-          >
+            onChange={(e) => setBaseUnit(e.target.value as ProductUnitCode)}>
             {PRODUCT_UNITS.map((u) => (
               <option key={u} value={u}>
                 {u} ({PRODUCT_UNIT_LABELS[u]})
               </option>
             ))}
-          </select>
+          </NativeSelect>
           {err.baseUnit && <span className={errText}>{err.baseUnit}</span>}
         </label>
 
@@ -102,39 +102,45 @@ export default function ProductForm({ categories }: { categories: string[] }) {
             ? "박스당 입수 (박스 단위 상품은 1 고정)"
             : `박스당 입수 (1박스 = 몇 ${baseUnit})`}
           {baseUnit === "BOX" ? (
-            <input className={`${input} bg-gray-100 text-gray-400`} value={1} disabled readOnly />
+            <Input className={`${input} bg-gray-100 text-gray-400`} value={1} disabled readOnly />
           ) : (
-            <input
+            <Input
               name="boxQty"
               className={input}
               type="number"
               min={1}
               step={1}
               required
-              defaultValue={1}
-            />
+              defaultValue={1} />
           )}
           {err.boxQty && <span className={errText}>{err.boxQty}</span>}
         </label>
 
         <label className="flex-1 text-sm">
           판매가 (원)
-          <input name="price" className={input} type="number" min={0} step={1} placeholder="0" />
+          <Input name="price" className={input} type="number" min={0} step={1} placeholder="0" />
           {err.price && <span className={errText}>{err.price}</span>}
         </label>
       </div>
+
+      <label className="block text-sm">
+        <span className="mb-1 block">안전재고</span>
+        <Input name="safetyStock" className="w-40" type="number" min={0} step={1} defaultValue={DEFAULT_SAFETY_STOCK} />
+        <span className="mt-1 block text-xs text-muted-foreground">
+          현재고가 이 값 이하이면 재고현황에서 &quot;부족&quot;으로 표시됩니다. (0 = 사용 안 함, 비우면 {DEFAULT_SAFETY_STOCK})
+        </span>
+        {err.safetyStock && <span className={errText}>{err.safetyStock}</span>}
+      </label>
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="trackExpiry" defaultChecked />
         유통기한 관리
       </label>
 
-      <button
-        disabled={pending}
-        className="rounded bg-blue-600 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400"
-      >
+      <Button type="submit"
+        disabled={pending}>
         {pending ? "처리 중..." : "등록"}
-      </button>
+      </Button>
 
       {state.message && (
         <p

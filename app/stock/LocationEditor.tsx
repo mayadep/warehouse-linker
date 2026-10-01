@@ -8,11 +8,13 @@ import {
   type RackPickerData,
 } from "@/modules/warehouse/actions";
 import { STORAGE_TYPE_LABELS, locationCode, rackCode, type StorageTypeCode } from "@/modules/warehouse/codes";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type WarehouseOption = { id: string; code: string; name: string; storageType: StorageTypeCode };
 
 const initialState: LocationChangeActionState = { status: "idle", message: "" };
-const sel = "rounded border border-gray-300 px-2 py-1 text-sm";
+const sel = "";
 
 /** 보관위치 변경: 창고 → 랙 → 단 → 구획 선택 후 변경 (교환·유형 경고는 서버가 확인 요청) */
 export default function LocationEditor({
@@ -92,17 +94,17 @@ export default function LocationEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">보관위치</span>
-        <span className="rounded bg-white px-2 py-0.5 font-mono">{currentCode ?? "없음"}</span>
+        <span className="rounded bg-background px-2 py-0.5 font-mono">{currentCode ?? "없음"}</span>
         <span className="text-gray-400">→</span>
-        <select aria-label="창고" className={sel} value={whId} onChange={(e) => onWarehouse(e.target.value)}>
+        <NativeSelect aria-label="창고" className={sel} value={whId} onChange={(e) => onWarehouse(e.target.value)}>
           <option value="">창고</option>
           {warehouses.map((w) => (
             <option key={w.id} value={w.id}>
               {w.code} {w.name} ({STORAGE_TYPE_LABELS[w.storageType]})
             </option>
           ))}
-        </select>
-        <select
+        </NativeSelect>
+        <NativeSelect
           aria-label="랙"
           className={sel}
           value={rackNo}
@@ -111,16 +113,15 @@ export default function LocationEditor({
             setRackNo(e.target.value);
             setLevel("");
             setBin("");
-          }}
-        >
+          }}>
           <option value="">{loadingRacks ? "불러오는 중" : "랙"}</option>
           {racks.map((r) => (
             <option key={r.number} value={r.number}>
               {rackCode(r.number)}
             </option>
           ))}
-        </select>
-        <select aria-label="단" className={sel} value={level} disabled={!rack} onChange={(e) => setLevel(e.target.value)}>
+        </NativeSelect>
+        <NativeSelect aria-label="단" className={sel} value={level} disabled={!rack} onChange={(e) => setLevel(e.target.value)}>
           <option value="">단</option>
           {rack &&
             Array.from({ length: rack.levels }, (_, i) => i + 1).map((n) => (
@@ -128,8 +129,8 @@ export default function LocationEditor({
                 {n}단
               </option>
             ))}
-        </select>
-        <select aria-label="구획" className={sel} value={bin} disabled={!rack || !level} onChange={(e) => setBin(e.target.value)}>
+        </NativeSelect>
+        <NativeSelect aria-label="구획" className={sel} value={bin} disabled={!rack || !level} onChange={(e) => setBin(e.target.value)}>
           <option value="">구획</option>
           {rack &&
             level &&
@@ -142,7 +143,7 @@ export default function LocationEditor({
                 </option>
               );
             })}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -152,19 +153,17 @@ export default function LocationEditor({
             {occupant ? <span className="ml-1 text-amber-700">· {occupant} 있음 (교환)</span> : <span className="ml-1 text-green-700">· 빈 칸</span>}
           </span>
         )}
-        <input name="reason" maxLength={200} placeholder="사유 (선택)" className="w-48 rounded border border-gray-300 px-2 py-1 text-sm" />
-        <button
+        <Input className="w-48 text-sm h-8" name="reason" maxLength={200} placeholder="사유 (선택)" />
+        <Button size="sm" type="submit"
           name="mode"
           value="set"
-          disabled={pending || !target}
-          className="rounded bg-blue-600 px-3 py-1 text-white hover:bg-blue-700 disabled:bg-gray-400"
-        >
+          disabled={pending || !target}>
           {pending ? "처리 중..." : "위치 변경"}
-        </button>
+        </Button>
         {locationId && (
-          <button name="mode" value="clear" disabled={pending} className="rounded border border-gray-300 px-3 py-1 hover:bg-gray-100">
+          <Button variant="outline" size="sm" type="submit" name="mode" value="clear" disabled={pending}>
             위치 해제
-          </button>
+          </Button>
         )}
       </div>
 
@@ -179,7 +178,7 @@ export default function LocationEditor({
             name="mode"
             value="set-confirmed"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-700 disabled:bg-gray-400"
+            className="mt-2 rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             확인하고 변경
           </button>

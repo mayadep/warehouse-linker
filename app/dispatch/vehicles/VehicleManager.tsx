@@ -4,7 +4,9 @@ import { startTransition, useActionState, useEffect, useRef } from "react";
 import { createVehicleAction, setVehicleActiveAction, type DispatchActionState } from "@/modules/dispatch/actions";
 import { STORAGE_TYPES, STORAGE_TYPE_LABELS, type StorageTypeCode } from "@/modules/warehouse/codes";
 import StorageBadge from "../../warehouses/StorageBadge";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type VehicleRow = {
   id: string;
   plateNo: string;
@@ -17,7 +19,7 @@ export type VehicleRow = {
 };
 
 const initial: DispatchActionState = { status: "idle", message: "" };
-const input = "rounded border border-gray-300 px-2 py-1.5 text-sm";
+const input = "";
 
 export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] }) {
   const [cState, cAction, cPending] = useActionState(createVehicleAction, initial);
@@ -43,40 +45,41 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
       >
         <label className="flex flex-col">
           차량번호
-          <input name="plateNo" placeholder="12가3456" maxLength={20} className={`${input} w-32`} />
+          <Input name="plateNo" placeholder="12가3456" maxLength={20} className={`${input} w-32`} />
         </label>
         <label className="flex flex-col">
           적재 온도
-          <select name="storageType" defaultValue="REFRIGERATED" className={input}>
+          <NativeSelect name="storageType" defaultValue="REFRIGERATED" className={input}>
             {STORAGE_TYPES.map((t) => (
               <option key={t} value={t}>
                 {STORAGE_TYPE_LABELS[t]}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
         <label className="flex flex-col">
           기사
-          <input name="driverName" maxLength={30} className={`${input} w-28`} />
+          <Input name="driverName" maxLength={30} className={`${input} w-28`} />
         </label>
         <label className="flex flex-col">
           연락처 (선택)
-          <input name="driverPhone" placeholder="010-0000-0000" maxLength={20} className={`${input} w-36`} />
+          <Input name="driverPhone" placeholder="010-0000-0000" maxLength={20} className={`${input} w-36`} />
         </label>
         <label className="flex flex-1 flex-col">
           비고 (선택)
-          <input name="memo" maxLength={200} className={input} />
+          <Input name="memo" maxLength={200} className={input} />
         </label>
-        <button disabled={cPending} className="rounded bg-blue-600 px-4 py-1.5 text-white hover:bg-blue-700 disabled:bg-gray-400">
+        <Button size="sm" type="submit" disabled={cPending}>
           {cPending ? "등록 중..." : "차량 등록"}
-        </button>
+        </Button>
       </form>
 
       {last && <p aria-live="polite" className={`text-sm ${last.status === "success" ? "text-green-700" : "text-red-600"}`}>{last.message}</p>}
 
-      <table className="w-full text-center text-sm">
+      <div className="overflow-x-auto rounded-lg border">
+<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
         <thead>
-          <tr className="border-b">
+          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
             <th className="py-2">차량번호</th>
             <th>적재 온도</th>
             <th>실을 수 있는 상품</th>
@@ -109,15 +112,16 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
                   <input type="hidden" name="vehicleId" value={v.id} />
                   <input type="hidden" name="active" value={v.isActive ? "0" : "1"} />
                   <span className={v.isActive ? "text-green-700" : "text-gray-400"}>{v.isActive ? "운행" : "중지"}</span>
-                  <button disabled={tPending} className="rounded border px-2 py-0.5 text-xs hover:bg-gray-100">
+                  <Button variant="outline" size="xs" type="submit" disabled={tPending}>
                     {v.isActive ? "운행 중지" : "운행 재개"}
-                  </button>
+                  </Button>
                 </form>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+</div>
     </div>
   );
 }

@@ -12,13 +12,14 @@ import {
   DISPATCH_CANCELLABLE,
   DISPATCH_NEXT,
   DISPATCH_STATUS_LABELS,
-  DISPATCH_STATUS_STYLE,
+  DISPATCH_STATUS_TONE,
   type DispatchStatusCode,
 } from "@/modules/dispatch/codes";
 import { STORAGE_TYPE_LABELS, type StorageTypeCode } from "@/modules/warehouse/codes";
 import StorageBadge from "../warehouses/StorageBadge";
 import OutboundPicker, { type OutboundOption } from "./OutboundPicker";
-
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 export type DispatchView = {
   id: string;
   dispatchNo: string;
@@ -55,12 +56,12 @@ function AddItems({ d, options, onClose }: { d: DispatchView; options: OutboundO
         <OutboundPicker options={options} vehicleType={d.vehicle.storageType} selected={selected} onChange={setSelected} />
         {state.status === "error" && <p className="text-red-600">{state.message}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => onClose()} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={() => onClose()}>
             닫기
-          </button>
-          <button disabled={pending || selected.length === 0} className="rounded bg-blue-600 px-4 py-2 text-white disabled:bg-gray-400">
+          </Button>
+          <Button type="submit" disabled={pending || selected.length === 0}>
             {pending ? "추가 중..." : `추가 (${selected.length}건)`}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -87,7 +88,7 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
         <div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-gray-500">{d.dispatchNo}</span>
-            <span className={`rounded px-1.5 py-0.5 text-xs ${DISPATCH_STATUS_STYLE[d.status]}`}>{DISPATCH_STATUS_LABELS[d.status]}</span>
+            <Badge variant={DISPATCH_STATUS_TONE[d.status]}>{DISPATCH_STATUS_LABELS[d.status]}</Badge>
           </div>
           <p className="mt-1 flex items-center gap-2 text-lg font-semibold">
             {d.vehicle.plateNo} <StorageBadge type={d.vehicle.storageType} />
@@ -101,24 +102,24 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
         </div>
         <div className="flex flex-wrap gap-2">
           {planned && (
-            <button type="button" onClick={() => { setFlash(""); setAdding(true); }} disabled={busy} className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
+            <Button variant="outline" size="sm" type="button" onClick={() => { setFlash(""); setAdding(true); }} disabled={busy}>
               + 출고 추가
-            </button>
+            </Button>
           )}
           {next && (
             <form action={(fd) => { setFlash(""); startTransition(() => sAction(fd)); }}>
               <input type="hidden" name="dispatchId" value={d.id} />
               <input type="hidden" name="version" value={d.version} />
               <input type="hidden" name="to" value={next.to} />
-              <button disabled={busy} className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400">
+              <Button size="sm" type="submit" disabled={busy}>
                 {next.label}
-              </button>
+              </Button>
             </form>
           )}
           {DISPATCH_CANCELLABLE.includes(d.status) && !confirmCancel && (
-            <button type="button" onClick={() => setConfirmCancel(true)} disabled={busy} className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50">
+            <Button variant="destructive" size="sm" type="button" onClick={() => setConfirmCancel(true)} disabled={busy}>
               배차 취소
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -132,17 +133,18 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
           <input type="hidden" name="version" value={d.version} />
           <input type="hidden" name="to" value="CANCELLED" />
           배차를 취소하면 실린 출고 {d.items.length}건이 다시 배차 대기로 돌아갑니다.
-          <button className="rounded bg-red-600 px-3 py-1 text-white">취소 확정</button>
-          <button type="button" onClick={() => setConfirmCancel(false)} className="rounded border px-3 py-1">아니오</button>
+          <Button variant="destructive-solid" size="sm" type="submit">취소 확정</Button>
+          <Button variant="outline" size="sm" type="button" onClick={() => setConfirmCancel(false)}>아니오</Button>
         </form>
       )}
 
       {msg && <p aria-live="polite" className={`mt-2 text-sm ${isErr ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
 
       {d.items.length > 0 && (
-        <table className="mt-3 w-full text-center text-sm">
+        <div className="mt-3 overflow-x-auto rounded-lg border">
+<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
           <thead>
-            <tr className="border-b text-xs text-gray-500">
+            <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
               <th className="w-10 py-1">순서</th>
               <th>출고처</th>
               <th>품목</th>
@@ -181,6 +183,7 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
             ))}
           </tbody>
         </table>
+</div>
       )}
 
       {adding && (

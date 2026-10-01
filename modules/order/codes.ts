@@ -17,12 +17,12 @@ export const ORDER_STATUS_LABELS: Record<OrderStatusCode, string> = {
   CANCELLED: "취소",
 };
 
-export const ORDER_STATUS_STYLE: Record<OrderStatusCode, string> = {
-  OPEN: "bg-gray-100 text-gray-700",
-  PARTIAL: "bg-amber-100 text-amber-800",
-  DONE: "bg-green-100 text-green-800",
-  CLOSED: "bg-slate-200 text-slate-700",
-  CANCELLED: "bg-red-100 text-red-700",
+export const ORDER_STATUS_TONE: Record<OrderStatusCode, "gray" | "slate" | "sky" | "amber" | "green" | "red"> = {
+  OPEN: "gray",
+  PARTIAL: "amber",
+  DONE: "green",
+  CLOSED: "slate",
+  CANCELLED: "red",
 };
 
 export const ORDER_LIMITS = {

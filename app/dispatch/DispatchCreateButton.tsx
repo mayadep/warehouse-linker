@@ -6,7 +6,9 @@ import { newRequestId } from "@/lib/request-id";
 import { createDispatchAction, type DispatchActionState } from "@/modules/dispatch/actions";
 import { STORAGE_TYPE_LABELS, type StorageTypeCode } from "@/modules/warehouse/codes";
 import OutboundPicker, { type OutboundOption } from "./OutboundPicker";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type VehicleOption = { id: string; plateNo: string; storageType: StorageTypeCode; driverName: string };
 
 const initial: DispatchActionState = { status: "idle", message: "" };
@@ -50,26 +52,24 @@ function CreateForm({
         <div className="flex gap-3">
           <label className="w-44">
             배송일
-            <input name="deliveryDate" type="date" defaultValue={date} className="w-full rounded border border-gray-300 px-2 py-1.5" />
+            <Input className="w-full" name="deliveryDate" type="date" defaultValue={date} />
           </label>
           <label className="flex-1">
             차량
-            <select
+            <NativeSelect className="w-full"
               name="vehicleId"
               value={vehicleId}
               onChange={(e) => {
                 setVehicleId(e.target.value);
                 setSelected([]);
-              }}
-              className="w-full rounded border border-gray-300 px-2 py-1.5"
-            >
+              }}>
               <option value="">-- 차량 선택 --</option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.plateNo} · {STORAGE_TYPE_LABELS[v.storageType]} · {v.driverName}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
         </div>
         {vehicles.length === 0 && <p className="text-amber-700">운행 중인 차량이 없습니다. 차량 관리에서 먼저 등록하세요.</p>}
@@ -81,16 +81,16 @@ function CreateForm({
         </div>
         <label>
           비고 (선택)
-          <input name="memo" maxLength={200} className="w-full rounded border border-gray-300 px-2 py-1.5" />
+          <Input className="w-full" name="memo" maxLength={200} />
         </label>
         {state.status === "error" && <p className="text-red-600">{state.message}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={onClose} disabled={pending}>
             취소
-          </button>
-          <button disabled={pending || !vehicle || selected.length === 0} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-gray-400">
+          </Button>
+          <Button type="submit" disabled={pending || !vehicle || selected.length === 0}>
             {pending ? "등록 중..." : `배차 등록 (${selected.length}건)`}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -103,16 +103,14 @@ export default function DispatchCreateButton(props: { date: string; vehicles: Ve
   return (
     <div className="flex items-center gap-3">
       {flash && <span aria-live="polite" className="text-sm text-green-700">{flash}</span>}
-      <button
+      <Button 
         type="button"
         onClick={() => {
           setFlash("");
           setOpen(true);
-        }}
-        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-      >
+        }}>
         + 배차 등록
-      </button>
+      </Button>
       {open && (
         <CreateForm
           {...props}

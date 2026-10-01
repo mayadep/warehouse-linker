@@ -37,7 +37,7 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
       <div className="mt-2 mb-6 flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold">{wh.name}</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">{wh.name}</h2>
             <span className="font-mono text-sm text-gray-500">{wh.code}</span>
             <StorageBadge type={wh.storageType} />
           </div>

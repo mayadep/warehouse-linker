@@ -11,12 +11,12 @@ export const DISPATCH_STATUS_LABELS: Record<DispatchStatusCode, string> = {
   CANCELLED: "취소",
 };
 
-export const DISPATCH_STATUS_STYLE: Record<DispatchStatusCode, string> = {
-  PLANNED: "bg-gray-100 text-gray-700",
-  LOADED: "bg-sky-100 text-sky-800",
-  IN_TRANSIT: "bg-amber-100 text-amber-800",
-  DELIVERED: "bg-green-100 text-green-800",
-  CANCELLED: "bg-red-100 text-red-700",
+export const DISPATCH_STATUS_TONE: Record<DispatchStatusCode, "gray" | "slate" | "sky" | "amber" | "green" | "red"> = {
+  PLANNED: "gray",
+  LOADED: "sky",
+  IN_TRANSIT: "amber",
+  DELIVERED: "green",
+  CANCELLED: "red",
 };
 
 /** 다음 단계와 버튼 문구 */

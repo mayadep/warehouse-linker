@@ -6,7 +6,9 @@ import {
   type OutboundActionState,
 } from "@/modules/outbound/actions";
 import { newRequestId } from "@/lib/request-id";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type OutboundProductOption = {
   id: string;
   sku: string;
@@ -20,7 +22,7 @@ export type OutboundProductOption = {
 
 const initialState: OutboundActionState = { status: "idle", message: "" };
 
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 export default function OutboundForm({
@@ -93,19 +95,17 @@ export default function OutboundForm({
     <form ref={formRef} onSubmit={onSubmit} className="flex max-w-xl flex-col gap-4" noValidate>
       <div className="text-sm">
         <span>상품</span>
-        <input
+        <Input
           className={`${input} mb-2`}
           placeholder="코드·품명·분류로 검색"
           value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-        />
-        <select
+          onChange={(e) => setKeyword(e.target.value)} />
+        <NativeSelect
           name="productId"
           className={input}
           value={productId}
           onChange={(e) => onSelectProduct(e.target.value)}
-          required
-        >
+          required>
           <option value="">-- 상품 선택 ({filtered.length}개) --</option>
           {selected && !filtered.includes(selected) && (
             <option value={selected.id}>
@@ -118,7 +118,7 @@ export default function OutboundForm({
               {p.stock === 0 ? " (재고 없음)" : ""}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         {selected && (
           <p className="mt-1 text-xs text-gray-500">
             현재고 {selected.stock.toLocaleString()} {selected.baseUnit}
@@ -132,7 +132,7 @@ export default function OutboundForm({
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           출고 수량
-          <input
+          <Input
             name="quantity"
             type="number"
             min={1}
@@ -142,8 +142,7 @@ export default function OutboundForm({
             className={`${input} ${overStock ? "border-red-400" : ""}`}
             placeholder="0"
             value={quantityText}
-            onChange={(e) => setQuantityText(e.target.value)}
-          />
+            onChange={(e) => setQuantityText(e.target.value)} />
           {overStock && (
             <span className={errText}>현재고({selected.stock.toLocaleString()})보다 많습니다.</span>
           )}
@@ -151,7 +150,7 @@ export default function OutboundForm({
         </label>
         <label className="flex-1 text-sm">
           출고단가 (원, 기본 판매가)
-          <input
+          <Input
             name="unitPrice"
             type="number"
             min={0}
@@ -159,8 +158,7 @@ export default function OutboundForm({
             className={input}
             placeholder="0"
             value={unitPriceText}
-            onChange={(e) => setUnitPriceText(e.target.value)}
-          />
+            onChange={(e) => setUnitPriceText(e.target.value)} />
           {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
         </label>
       </div>
@@ -168,13 +166,12 @@ export default function OutboundForm({
       <div className="flex gap-4">
         <label className="flex-1 text-sm">
           출고처 (선택)
-          <input
+          <Input
             name="customer"
             maxLength={100}
             className={input}
             placeholder="○○마트"
-            list="outbound-customers"
-          />
+            list="outbound-customers" />
           <datalist id="outbound-customers">
             {customers.map((c) => (
               <option key={c} value={c} />
@@ -184,23 +181,21 @@ export default function OutboundForm({
         </label>
         <label className="flex-1 text-sm">
           출고일시 (비우면 현재 시각)
-          <input name="shippedAt" type="datetime-local" className={input} />
+          <Input name="shippedAt" type="datetime-local" className={input} />
           {err.shippedAt && <span className={errText}>{err.shippedAt}</span>}
         </label>
       </div>
 
       <label className="text-sm">
         비고 (선택)
-        <input name="memo" maxLength={500} className={input} />
+        <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className={errText}>{err.memo}</span>}
       </label>
 
-      <button
-        disabled={pending}
-        className="rounded bg-blue-600 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400"
-      >
+      <Button type="submit"
+        disabled={pending}>
         {pending ? "처리 중..." : "출고 등록"}
-      </button>
+      </Button>
 
       {state.status === "confirm" ? (
         <div
@@ -212,7 +207,7 @@ export default function OutboundForm({
             name="confirmDuplicate"
             value="1"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700 disabled:bg-gray-400"
+            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             그래도 등록
           </button>

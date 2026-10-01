@@ -12,7 +12,9 @@ import {
   ORDER_TYPE_LABELS,
   type OrderTypeCode,
 } from "@/modules/order/codes";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 export type OrderProductOption = {
   id: string;
   sku: string;
@@ -26,7 +28,7 @@ export type OrderProductOption = {
 type Row = { key: number; productId: string; quantity: string; unitPrice: string };
 
 const initial: OrderCreateState = { status: "idle", message: "" };
-const input = "w-full rounded border border-gray-300 px-2 py-1.5 text-sm";
+const input = "w-full";
 
 function CreateForm({
   type,
@@ -52,8 +54,8 @@ function CreateForm({
 
   // 등록 성공 → 상세 화면으로
   useEffect(() => {
-    if (state.status === "success" && state.orderId) router.push(`/orders/${state.orderId}`);
-  }, [state, router]);
+    if (state.status === "success" && state.orderId) router.push(`/orders/${type === "SALES" ? "sales" : "purchase"}/${state.orderId}`);
+  }, [state, router, type]);
 
   function update(key: number, patch: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -91,7 +93,7 @@ function CreateForm({
         <div className="flex gap-3">
           <label className="flex-1">
             {ORDER_PARTNER_LABELS[type]}
-            <input name="partner" list="order-partners" maxLength={ORDER_LIMITS.maxPartnerLength} className={input} />
+            <Input name="partner" list="order-partners" maxLength={ORDER_LIMITS.maxPartnerLength} className={input} />
             <datalist id="order-partners">
               {partners.map((p) => (
                 <option key={p} value={p} />
@@ -101,7 +103,7 @@ function CreateForm({
           </label>
           <label className="w-44">
             {ORDER_DUE_LABELS[type]} (선택)
-            <input name="dueDate" type="date" className={input} />
+            <Input name="dueDate" type="date" className={input} />
             {err.dueDate && <span className="text-xs text-red-600">{err.dueDate}</span>}
           </label>
         </div>
@@ -109,12 +111,10 @@ function CreateForm({
         <div className="rounded border border-gray-200 p-2">
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="font-medium">품목</span>
-            <input
+            <Input className="w-56 text-xs h-8"
               placeholder="상품 목록 검색 (코드·품명)"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              className="w-56 rounded border border-gray-300 px-2 py-1 text-xs"
-            />
+              onChange={(e) => setKeyword(e.target.value)} />
           </div>
           <table className="w-full text-center text-sm">
             <thead>
@@ -134,7 +134,7 @@ function CreateForm({
                   <tr key={r.key}>
                     <td className="text-gray-400">{i + 1}</td>
                     <td className="py-1">
-                      <select className={input} value={r.productId} onChange={(e) => choose(r.key, e.target.value)}>
+                      <NativeSelect className={input} value={r.productId} onChange={(e) => choose(r.key, e.target.value)}>
                         <option value="">-- 상품 선택 --</option>
                         {p && !filtered.includes(p) && (
                           <option value={p.id}>
@@ -146,14 +146,14 @@ function CreateForm({
                             [{o.sku}] {o.name} · 재고 {o.stock.toLocaleString()}
                           </option>
                         ))}
-                      </select>
+                      </NativeSelect>
                       {short && <span className="block text-xs text-amber-700">현재고 {p!.stock.toLocaleString()} — 출고 시 부족할 수 있음</span>}
                     </td>
                     <td>
-                      <input type="number" min={1} className={input} value={r.quantity} onChange={(e) => update(r.key, { quantity: e.target.value })} />
+                      <Input type="number" min={1} className={input} value={r.quantity} onChange={(e) => update(r.key, { quantity: e.target.value })} />
                     </td>
                     <td>
-                      <input type="number" min={0} className={input} value={r.unitPrice} placeholder="선택" onChange={(e) => update(r.key, { unitPrice: e.target.value })} />
+                      <Input type="number" min={0} className={input} value={r.unitPrice} placeholder="선택" onChange={(e) => update(r.key, { unitPrice: e.target.value })} />
                     </td>
                     <td>
                       {rows.length > 1 && (
@@ -168,14 +168,12 @@ function CreateForm({
             </tbody>
           </table>
           <div className="mt-2 flex items-center justify-between">
-            <button
+            <Button variant="outline" size="xs"
               type="button"
-              disabled={rows.length >= ORDER_LIMITS.maxLines}
-              onClick={() => setRows((rs) => [...rs, { key: Math.max(...rs.map((x) => x.key)) + 1, productId: "", quantity: "", unitPrice: "" }])}
-              className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
-            >
+              disabled={rows.length>= ORDER_LIMITS.maxLines}
+              onClick={() => setRows((rs) => [...rs, { key: Math.max(...rs.map((x) => x.key)) + 1, productId: "", quantity: "", unitPrice: "" }])}>
               + 품목 추가
-            </button>
+            </Button>
             <span className="text-xs text-gray-500">합계 금액 {total.toLocaleString()}원</span>
           </div>
           {err.lines && <p className="mt-1 text-xs text-red-600">{err.lines}</p>}
@@ -183,17 +181,17 @@ function CreateForm({
 
         <label>
           비고 (선택)
-          <input name="memo" maxLength={ORDER_LIMITS.maxMemoLength} className={input} />
+          <Input name="memo" maxLength={ORDER_LIMITS.maxMemoLength} className={input} />
         </label>
 
         {state.status === "error" && <p className="text-red-600">{state.message}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">
+          <Button variant="outline" type="button" onClick={onClose} disabled={pending}>
             취소
-          </button>
-          <button disabled={pending} className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-gray-400">
+          </Button>
+          <Button type="submit" disabled={pending}>
             {pending ? "등록 중..." : `${ORDER_TYPE_LABELS[type]} 등록`}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -204,9 +202,9 @@ export default function OrderCreateButton(props: { type: OrderTypeCode; products
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+      <Button  type="button" onClick={() => setOpen(true)}>
         + {ORDER_TYPE_LABELS[props.type]} 등록
-      </button>
+      </Button>
       {open && <CreateForm {...props} onClose={() => setOpen(false)} />}
     </>
   );

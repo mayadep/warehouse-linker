@@ -75,10 +75,10 @@ export default async function OutboundPage() {
 
   return (
     <div className="max-w-4xl">
-      <h2 className="mb-6 text-xl font-bold">출고</h2>
+      <h2 className="mb-6 text-2xl font-semibold tracking-tight">출고</h2>
 
       {products.length === 0 ? (
-        <p className="rounded border border-yellow-300 bg-yellow-50 p-4 text-sm">
+        <p className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 p-4 text-sm">
           DB에 등록된 상품이 없습니다. 상품등록 화면에서 상품을 먼저 등록하세요.
         </p>
       ) : (

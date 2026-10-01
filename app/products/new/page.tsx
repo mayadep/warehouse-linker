@@ -2,7 +2,8 @@ import { connection } from "next/server";
 import { listCategories, listProducts } from "@/modules/product/service";
 import ProductForm from "./ProductForm";
 import DevBadge from "@/components/DevBadge";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 export default async function NewProductPage({
   searchParams,
 }: {
@@ -20,7 +21,7 @@ export default async function NewProductPage({
 
   return (
     <div className="max-w-4xl">
-      <h2 className="mb-6 text-xl font-bold">상품등록</h2>
+      <h2 className="mb-6 text-2xl font-semibold tracking-tight">상품등록</h2>
 
       <ProductForm categories={categories} />
 
@@ -46,22 +47,21 @@ export default async function NewProductPage({
             비활성화 <DevBadge />
           </button>
           <form className="flex gap-2">
-            <input
+            <Input className="w-56 text-sm"
               name="q"
               defaultValue={keyword}
-              placeholder="코드·품명·분류 검색"
-              className="w-56 rounded border border-gray-300 px-3 py-1.5 text-sm"
-            />
-            <button className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">
+              placeholder="코드·품명·분류 검색" />
+            <Button variant="outline" size="sm" type="submit">
               검색
-            </button>
+            </Button>
           </form>
         </div>
       </div>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border">
+<table className="w-full text-left text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
         <thead>
-          <tr className="border-b text-left">
+          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
             <th className="py-2">코드</th>
             <th>품명</th>
             <th>분류</th>
@@ -94,6 +94,7 @@ export default async function NewProductPage({
           ))}
         </tbody>
       </table>
+</div>
     </div>
   );
 }

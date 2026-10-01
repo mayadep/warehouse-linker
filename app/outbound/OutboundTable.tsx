@@ -3,7 +3,7 @@
 import { useState } from "react";
 import OutboundEditDialog from "./OutboundEditDialog";
 import DevBadge from "@/components/DevBadge";
-
+import { Button } from "@/components/ui/button";
 export type OutboundRevisionView = {
   createdAtText: string;
   reason: string;
@@ -69,14 +69,12 @@ export default function OutboundTable({ rows }: { rows: OutboundRow[] }) {
           {visibleSelected.length > 1 && (
             <span className="text-xs text-gray-500">수정은 1건씩 가능합니다</span>
           )}
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={openEdit}
-            disabled={visibleSelected.length !== 1}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
-          >
+            disabled={visibleSelected.length !== 1}>
             선택 수정
-          </button>
+          </Button>
           <button
             type="button"
             disabled
@@ -94,9 +92,10 @@ export default function OutboundTable({ rows }: { rows: OutboundRow[] }) {
         </p>
       )}
 
-      <table className="w-full text-center text-sm">
+      <div className="overflow-x-auto rounded-lg border">
+<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
         <thead>
-          <tr className="border-b">
+          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
             <th className="w-8 py-2">
               <input
                 type="checkbox"
@@ -128,7 +127,7 @@ export default function OutboundTable({ rows }: { rows: OutboundRow[] }) {
           {rows.map((r) => (
             <tr
               key={r.id}
-              className={`border-b ${selected.has(r.id) ? "bg-blue-50" : ""}`}
+              className={`border-b ${selected.has(r.id) ? "bg-indigo-50" : ""}`}
             >
               <td className="py-2">
                 <input
@@ -180,6 +179,7 @@ export default function OutboundTable({ rows }: { rows: OutboundRow[] }) {
           ))}
         </tbody>
       </table>
+</div>
 
       {editing && (
         <OutboundEditDialog

@@ -41,7 +41,7 @@ export default function OutboundPicker({
   return (
     <div className="max-h-72 overflow-y-auto rounded border border-gray-200">
       <table className="w-full text-center text-sm">
-        <thead className="sticky top-0 bg-white">
+        <thead className="sticky top-0 bg-background">
           <tr className="border-b text-xs text-gray-500">
             <th className="w-8 py-1">
               <input
@@ -63,7 +63,7 @@ export default function OutboundPicker({
           {options.map((o) => {
             const can = ok(o);
             return (
-              <tr key={o.id} className={`border-b ${can ? "" : "bg-gray-50 text-gray-400"} ${selected.includes(o.id) ? "bg-blue-50" : ""}`}>
+              <tr key={o.id} className={`border-b ${can ? "" : "bg-gray-50 text-gray-400"} ${selected.includes(o.id) ? "bg-indigo-50" : ""}`}>
                 <td className="py-1">
                   <input type="checkbox" aria-label={`${o.name} 선택`} disabled={!can} checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
                 </td>

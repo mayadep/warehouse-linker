@@ -7,7 +7,8 @@ import { storageTypeForCategory } from "@/modules/warehouse/assign";
 import DispatchCard, { type DispatchView } from "./DispatchCard";
 import DispatchCreateButton from "./DispatchCreateButton";
 import type { OutboundOption } from "./OutboundPicker";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 const dtFmt = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
   month: "2-digit",
@@ -70,8 +71,8 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
     <div className="max-w-5xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold">배차관리</h2>
-          <Link href="/dispatch/vehicles" className="text-sm text-blue-700 hover:underline">
+          <h2 className="text-2xl font-semibold tracking-tight">배차관리</h2>
+          <Link href="/dispatch/vehicles" className="text-sm text-indigo-700 hover:underline">
             차량 관리 ›
           </Link>
         </div>
@@ -85,8 +86,8 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <Link href={`/dispatch?date=${shiftDate(date, -1)}`} className="rounded border px-2 py-1 hover:bg-gray-100">‹ 전날</Link>
         <form className="flex items-center gap-2">
-          <input type="date" name="date" defaultValue={date} className="rounded border border-gray-300 px-2 py-1" />
-          <button className="rounded border px-2 py-1 hover:bg-gray-100">이동</button>
+          <Input className="h-8" type="date" name="date" defaultValue={date} />
+          <Button variant="outline" size="sm" type="submit">이동</Button>
         </form>
         <Link href={`/dispatch?date=${shiftDate(date, 1)}`} className="rounded border px-2 py-1 hover:bg-gray-100">다음날 ›</Link>
         {date !== todayKst() && (
@@ -103,8 +104,8 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
       </div>
 
       {vehicles.length === 0 && (
-        <p className="mb-4 rounded border border-yellow-300 bg-yellow-50 p-3 text-sm">
-          등록된 차량이 없습니다. <Link href="/dispatch/vehicles" className="text-blue-700 underline">차량 관리</Link>에서 먼저 차량을 등록하세요.
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+          등록된 차량이 없습니다. <Link href="/dispatch/vehicles" className="text-indigo-700 underline">차량 관리</Link>에서 먼저 차량을 등록하세요.
         </p>
       )}
 

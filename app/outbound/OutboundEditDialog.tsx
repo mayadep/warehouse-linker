@@ -6,9 +6,10 @@ import {
   type OutboundUpdateActionState,
 } from "@/modules/outbound/actions";
 import type { OutboundRow } from "./OutboundTable";
-
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 const initialState: OutboundUpdateActionState = { status: "idle", message: "" };
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 export default function OutboundEditDialog({
@@ -55,7 +56,7 @@ export default function OutboundEditDialog({
       onCancel={(e) => {
         if (pending) e.preventDefault(); // 저장 중에는 ESC로 닫지 않음
       }}
-      className="m-auto w-full max-w-lg rounded-lg p-0 shadow-xl backdrop:bg-black/40"
+      className="m-auto w-full max-w-lg rounded-xl border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-[2px]"
       aria-labelledby="outbound-edit-title"
     >
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4 p-6">
@@ -88,27 +89,25 @@ export default function OutboundEditDialog({
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             출고 수량 ({row.baseUnit})
-            <input
+            <Input
               name="quantity"
               type="number"
               min={1}
               step={1}
               className={input}
               value={quantityText}
-              onChange={(e) => setQuantityText(e.target.value)}
-            />
+              onChange={(e) => setQuantityText(e.target.value)} />
             {err.quantity && <span className={errText}>{err.quantity}</span>}
           </label>
           <label className="flex-1 text-sm">
             출고단가 (원)
-            <input
+            <Input
               name="unitPrice"
               type="number"
               min={0}
               step={1}
               className={input}
-              defaultValue={row.unitPrice ?? ""}
-            />
+              defaultValue={row.unitPrice ?? ""} />
             {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
           </label>
         </div>
@@ -125,35 +124,33 @@ export default function OutboundEditDialog({
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             출고처
-            <input name="customer" maxLength={100} className={input} defaultValue={row.customer ?? ""} />
+            <Input name="customer" maxLength={100} className={input} defaultValue={row.customer ?? ""} />
             {err.customer && <span className={errText}>{err.customer}</span>}
           </label>
           <label className="flex-1 text-sm">
             출고일시
-            <input
+            <Input
               name="shippedAt"
               type="datetime-local"
               className={input}
-              defaultValue={row.shippedAtInput}
-            />
+              defaultValue={row.shippedAtInput} />
             {err.shippedAt && <span className={errText}>{err.shippedAt}</span>}
           </label>
         </div>
 
         <label className="text-sm">
           비고
-          <input name="memo" maxLength={500} className={input} defaultValue={row.memo ?? ""} />
+          <Input name="memo" maxLength={500} className={input} defaultValue={row.memo ?? ""} />
           {err.memo && <span className={errText}>{err.memo}</span>}
         </label>
 
         <label className="text-sm">
           수정 사유 <span className="text-red-600">*</span>
-          <input
+          <Input
             name="reason"
             maxLength={200}
             className={input}
-            placeholder="예: 수량 오입력 (출고전표 기준 12개)"
-          />
+            placeholder="예: 수량 오입력 (출고전표 기준 12개)" />
           {err.reason && <span className={errText}>{err.reason}</span>}
         </label>
 
@@ -164,20 +161,16 @@ export default function OutboundEditDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
+          <Button variant="outline"
             type="button"
             onClick={() => dialogRef.current?.close()}
-            disabled={pending}
-            className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100"
-          >
+            disabled={pending}>
             취소
-          </button>
-          <button
-            disabled={pending}
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-400"
-          >
+          </Button>
+          <Button type="submit"
+            disabled={pending}>
             {pending ? "저장 중..." : "저장"}
-          </button>
+          </Button>
         </div>
 
         {row.revisions.length > 0 && (

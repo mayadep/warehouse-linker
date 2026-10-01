@@ -3,15 +3,16 @@ import { connection } from "next/server";
 import { listStockStatus, parseStockFilter, type StockFilter } from "@/modules/stock/queries";
 import { listWarehouseOptions } from "@/modules/warehouse/location";
 import StockTable, { type StockRow } from "./StockTable";
-
+import { ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, SearchIcon } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 const dateFmt = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
   year: "2-digit",
   month: "2-digit",
   day: "2-digit",
 });
-
-const select = "rounded border border-gray-300 px-2 py-1.5 text-sm";
 
 /** 현재 필터를 유지한 채 페이지만 바꾼 URL */
 function pageHref(filter: StockFilter, page: number): string {
@@ -69,105 +70,114 @@ export default async function StockPage({
   }));
 
   const cards = [
-    { label: "전체 품목", value: `${summary.total.toLocaleString()}개`, href: "/stock", tone: "text-gray-900" },
+    { label: "전체 품목", value: `${summary.total.toLocaleString()}개`, href: "/stock", tone: "text-foreground" },
     { label: "재고 없음", value: `${summary.out.toLocaleString()}개`, href: "/stock?status=out", tone: "text-red-600" },
     { label: "부족 (안전재고 이하)", value: `${summary.low.toLocaleString()}개`, href: "/stock?status=low", tone: "text-amber-600" },
-    { label: "재고금액 (판매가 기준)", value: `${summary.totalValue.toLocaleString()}원`, href: null, tone: "text-gray-900" },
+    { label: "재고금액 (판매가 기준)", value: `${summary.totalValue.toLocaleString()}원`, href: null, tone: "text-foreground" },
   ];
 
   return (
     <div className="max-w-6xl">
-      <h2 className="mb-6 text-xl font-bold">재고현황</h2>
+      <h2 className="mb-6 text-2xl font-semibold tracking-tight">재고현황</h2>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         {cards.map((c) => {
           const body = (
             <>
-              <p className="text-xs text-gray-500">{c.label}</p>
-              <p className={`mt-1 text-lg font-semibold ${c.tone}`}>{c.value}</p>
+              <p className="text-xs font-medium text-muted-foreground">{c.label}</p>
+              <p className={`mt-1.5 text-2xl font-semibold tabular-nums ${c.tone}`}>{c.value}</p>
             </>
           );
           return c.href ? (
-            <Link key={c.label} href={c.href} className="rounded border border-gray-200 p-3 hover:bg-gray-50">
+            <Link key={c.label} href={c.href} className="rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
               {body}
             </Link>
           ) : (
-            <div key={c.label} className="rounded border border-gray-200 p-3">
+            <div key={c.label} className="rounded-xl border bg-card p-4 shadow-xs">
               {body}
             </div>
           );
         })}
       </div>
 
-      <form className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          name="q"
-          defaultValue={filter.q}
-          placeholder="코드·품명 검색"
-          className="w-48 rounded border border-gray-300 px-3 py-1.5 text-sm"
-        />
-        <select name="category" defaultValue={filter.category} className={select}>
+      <form className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="w-56 bg-background pl-8" name="q" defaultValue={filter.q} placeholder="코드·품명 검색" />
+        </div>
+        <NativeSelect name="category" defaultValue={filter.category} className="[&_select]:bg-background">
           <option value="">전체 분류</option>
           {categories.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
-        </select>
-        <select name="status" defaultValue={filter.status} className={select}>
+        </NativeSelect>
+        <NativeSelect name="status" defaultValue={filter.status} className="[&_select]:bg-background">
           <option value="all">전체 상태</option>
           <option value="short">부족 + 재고 없음</option>
           <option value="low">부족</option>
           <option value="out">재고 없음</option>
-        </select>
-        <select name="sort" defaultValue={filter.sort} className={select}>
+        </NativeSelect>
+        <NativeSelect name="sort" defaultValue={filter.sort} className="[&_select]:bg-background">
           <option value="sku">코드순</option>
           <option value="stock">재고 적은 순</option>
           <option value="name">품명순</option>
-        </select>
-        <button className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100">조회</button>
-        <Link href="/stock" className="px-2 text-sm text-gray-500 hover:underline">
+        </NativeSelect>
+        <Button type="submit">
+          <SearchIcon data-icon="inline-start" />
+          조회
+        </Button>
+        <Link href="/stock" className={buttonVariants({ variant: "ghost" })}>
+          <RotateCcwIcon data-icon="inline-start" />
           초기화
         </Link>
-        <span className="ml-auto text-sm text-gray-500">
-          {matched.toLocaleString()}개 품목
+        <span className="ml-auto text-sm text-muted-foreground tabular-nums">
+          <b className="font-semibold text-foreground">{matched.toLocaleString()}</b>개 품목
           {matched > 0 &&
             ` · ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, matched).toLocaleString()} 표시`}
         </span>
       </form>
-
       <StockTable rows={tableRows} warehouses={warehouses} />
 
       {totalPages > 1 && (
-        <nav className="mt-4 flex flex-wrap items-center justify-center gap-1 text-sm" aria-label="페이지">
+        <nav className="mt-5 flex flex-wrap items-center justify-center gap-1" aria-label="페이지">
           {page > 1 ? (
-            <Link href={pageHref(filter, page - 1)} className="rounded border px-2 py-1 hover:bg-gray-100">
-              ‹ 이전
+            <Link href={pageHref(filter, page - 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <ChevronLeftIcon data-icon="inline-start" />
+              이전
             </Link>
           ) : (
-            <span className="rounded border px-2 py-1 text-gray-300">‹ 이전</span>
+            <span className={buttonVariants({ variant: "outline", size: "sm" }) + " pointer-events-none opacity-50"}>
+              <ChevronLeftIcon data-icon="inline-start" />
+              이전
+            </span>
           )}
           {pageNumbers(page, totalPages).map((n, i) =>
             n === "…" ? (
-              <span key={`gap-${i}`} className="px-1 text-gray-400">
+              <span key={`gap-${i}`} className="px-1 text-muted-foreground">
                 …
               </span>
             ) : n === page ? (
-              <span key={n} aria-current="page" className="rounded border border-blue-600 bg-blue-600 px-2 py-1 text-white">
+              <span key={n} aria-current="page" className={buttonVariants({ size: "sm" }) + " min-w-8 tabular-nums"}>
                 {n}
               </span>
             ) : (
-              <Link key={n} href={pageHref(filter, n)} className="rounded border px-2 py-1 hover:bg-gray-100">
+              <Link key={n} href={pageHref(filter, n)} className={buttonVariants({ variant: "ghost", size: "sm" }) + " min-w-8 tabular-nums"}>
                 {n}
               </Link>
             )
           )}
           {page < totalPages ? (
-            <Link href={pageHref(filter, page + 1)} className="rounded border px-2 py-1 hover:bg-gray-100">
-              다음 ›
+            <Link href={pageHref(filter, page + 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              다음
+              <ChevronRightIcon data-icon="inline-end" />
             </Link>
           ) : (
-            <span className="rounded border px-2 py-1 text-gray-300">다음 ›</span>
+            <span className={buttonVariants({ variant: "outline", size: "sm" }) + " pointer-events-none opacity-50"}>
+              다음
+              <ChevronRightIcon data-icon="inline-end" />
+            </span>
           )}
         </nav>
       )}

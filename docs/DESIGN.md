@@ -1,7 +1,7 @@
 # 상품·입고·출고·재고현황·창고 설계 (2026-10-01)
 
 ## 데이터 모델
-- `Product`: sku(unique), name, category, price, stock(**DB CHECK >= 0**), baseUnit(enum ProductUnit), boxQty(≥1 CHECK), trackExpiry, safetyStock(기본 0, CHECK >= 0), locationId?(기본 보관위치, **unique = 한 칸에 한 상품**, onDelete SetNull). 인덱스 (category, sku), (stock)
+- `Product`: sku(unique), name, category, price, stock(**DB CHECK >= 0**), baseUnit(enum ProductUnit), boxQty(≥1 CHECK), trackExpiry, safetyStock(DB 기본 0, 상품등록 화면에서 입력, 비우면 기본 5 `modules/product/defaults.ts`·시드도 5, CHECK >= 0), locationId?(기본 보관위치, **unique = 한 칸에 한 상품**, onDelete SetNull). 인덱스 (category, sku), (stock)
 - `Inbound`: productId, quantity>0 CHECK, unitCost?, supplier?, memo?, receivedAt, version, requestId?(unique), updatedAt
 - `Outbound`: productId, quantity>0 CHECK, unitPrice?(기본 판매가), customer?(출고처), memo?, shippedAt, version, requestId?(unique), updatedAt
 - `StockMovement`: 모든 재고 변경 이력. type INBOUND/OUTBOUND/ADJUST/INBOUND_CORRECTION/OUTBOUND_CORRECTION, quantity ±, before/afterStock, inboundId?, outboundId?
@@ -37,7 +37,7 @@
 - `processOrder`: 주문 행 FOR UPDATE + version 확인, 품목별 남은 수량 이하만, 발주→Inbound+changeStock / 수주→Outbound+changeStock(재고 부족 시 전체 롤백), 요청키 `requestId:lineId`를 Inbound/Outbound.requestId로 → 이중 처리 차단, 처리 후 `refreshOrderStatus`
 - `finishOrder`: close(잔량 종결, PARTIAL만) / cancel(OPEN이고 처리 0일 때만)
 - 연동: 입고/출고 **수정**으로 수량이 바뀌면 `adjustOrderLineProcessed`(조건부 UPDATE, 범위 벗어나면 거부) + 상태 재계산. 불변식 processedQty == 연결된 입고/출고 수량 합
-- 화면 `/orders?type=purchase|sales&status=active|all|…&q=` 목록, 등록 모달(품목 줄 추가·삭제, 수주는 판매가 기본·재고 부족 경고, 성공 시 상세로 이동), `/orders/[id]` 상세(품목별 주문/처리/남은 수량·이력), 입고/출고 처리 모달(기본값 남은 수량, 수주는 현재고까지), 잔량 종결·주문 취소(확인 후)
+- 화면 (2026-10-01 발주/수주 메뉴 분리): 사이드 메뉴 '발주'·'수주'가 각각 `/orders/purchase`·`/orders/sales`(`?status=active|all|…&q=`) 목록으로 연결. 예전 `/orders`(`?type=sales`)는 새 주소로 리다이렉트. 목록 등록 모달(품목 줄 추가·삭제, 수주는 판매가 기본·재고 부족 경고, 성공 시 상세로 이동), `/orders/[type]/[id]` 상세(주소의 종류와 실제 주문 종류가 다르면 404, 사이드바가 상세에서도 맞는 메뉴를 강조)(품목별 주문/처리/남은 수량·이력), 입고/출고 처리 모달(기본값 남은 수량, 수주는 현재고까지), 잔량 종결·주문 취소(확인 후)
 
 ## 배차 (modules/dispatch) — 2026-10-02
 - 모델: `Vehicle`(plateNo unique 공백 제거, storageType 적재 온도, driverName, driverPhone?, isActive), `Dispatch`(dispatchNo DSP-YYYYMMDD-NNN, deliveryDate KST 자정, vehicleId, status PLANNED/LOADED/IN_TRANSIT/DELIVERED/CANCELLED, version, requestId, deliveredAt, cancelledAt), `DispatchItem`(outboundId **unique** = 출고 1건은 배차 1곳, seq 배송 순서)
@@ -45,6 +45,12 @@
 - 배정은 advisory lock 'dispatch-assign' + unique로 중복 배차 차단. 상태는 한 단계씩만(배차→상차 완료→배송중→배송 완료), 취소는 출발 전만 가능하며 품목을 지워 출고를 다시 배차 대기로. 품목 추가/빼기는 배차 단계에서만(마지막 1건은 빼기 불가 → 취소)
 - 차량 운행 중지는 진행 중 배차가 없을 때만
 - 화면 `/dispatch?date=YYYY-MM-DD`(전날/다음날, 배차 카드: 차량·기사·품목·상태 버튼·출고 추가·빼기·취소), 배차 등록 모달(차량 선택 시 못 싣는 출고는 체크 불가, 최근 14일 미배차 출고), `/dispatch/vehicles` 차량 등록·운행 중지/재개
+
+## UI 테마 · 다크 모드 (2026-10-01)
+- shadcn/ui(base-nova) + 인디고 포인트. 색은 `app/globals.css`의 CSS 변수(`:root` 라이트 / `.dark` 다크)가 기준이며 `components/ui/*`(button·badge·input·textarea·native-select)를 공용으로 쓴다. Select는 폼 제출 호환을 위해 `NativeSelect`(네이티브 select 기반) 사용
+- 다크 모드: `<html>`에 `dark` 클래스. `app/layout.tsx`의 `<head>` 인라인 스크립트가 첫 화면 전에 저장값(localStorage `theme` = light|dark, OS 설정과 무관, 저장값이 없으면 라이트)을 적용해 깜빡임 방지. 사이드바 하단 `components/ThemeToggle.tsx`가 라이트 ↔ 다크 전환
+- 코드에 직접 쓴 팔레트(`text-gray-500`, `bg-amber-50`, `text-red-600` 등)는 화면마다 `dark:`를 붙이지 않고 `.dark` 안에서 `--color-gray-*`, `--color-amber-*` 등 팔레트 변수를 덮어써서 처리한다. **새 화면에서는 가능하면 `bg-card`, `text-muted-foreground`, `border` 같은 토큰을 쓰고, 팔레트 색을 새로 쓰면 `.dark` 덮어쓰기에 해당 색조·단계가 있는지 확인할 것**
+- 상태 배지는 `components/ui/badge.tsx` 색 variant(gray·slate·indigo·sky·amber·green·red)로 통일, 상태→색 매핑은 `modules/*/codes.ts`의 `*_STATUS_TONE`
 
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
@@ -64,7 +70,7 @@
 
 ## 미결 / 추천 후보
 - 인증/권한 (각 Server Action 권한 확인, 수정자 기록)
-- 입고/출고 취소(전표 무효화 + 역이력), 상품 수정/비활성화, 상품등록 화면에 안전재고 입력
+- 입고/출고 취소(전표 무효화 + 역이력), 상품 수정/비활성화
 - 거래처 마스터(공급처/출고처)
 - 유통기한/로트 관리(trackExpiry 활용, 선입선출), 박스 단위 환산 입출고
 - 기간별 집계·엑셀 내보내기, 배차관리 연동

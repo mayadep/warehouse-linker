@@ -20,6 +20,7 @@ export async function createProduct(input: ProductInput) {
         category: input.category,
         price: input.price,
         stock: 0,
+        safetyStock: input.safetyStock,
         baseUnit: input.baseUnit,
         boxQty: input.baseUnit === "BOX" ? 1 : input.boxQty,
         trackExpiry: input.trackExpiry,
