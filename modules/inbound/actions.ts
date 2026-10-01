@@ -113,6 +113,7 @@ export async function updateInboundAction(
     revalidatePath("/inbound");
     revalidatePath("/outbound");
     revalidatePath("/products/new"); // 현재고 표시
+    revalidatePath("/orders", "layout"); // 발주 입고 수량
     const fields = r.changedFields.map((f) => FIELD_LABELS[f] ?? f).join(", ");
     const stock =
       r.afterStock === null

@@ -8,6 +8,7 @@ import {
   SIMILAR_WINDOW_MS,
 } from "@/modules/stock/service";
 import type { OutboundCreateInput, OutboundUpdateInput } from "./validation";
+import { adjustOrderLineProcessed, OrderLineLimitError } from "@/modules/order/lines";
 
 export class OutboundError extends Error {}
 export class OutboundConflictError extends OutboundError {}
@@ -173,6 +174,15 @@ export async function updateOutbound(input: OutboundUpdateInput) {
           );
         }
         throw e;
+      }
+      // 수주에서 출고된 건이면 수주 품목의 출고 수량도 함께 조정
+      if (cur.orderLineId) {
+        try {
+          await adjustOrderLineProcessed(tx, cur.orderLineId, qtyDelta);
+        } catch (e) {
+          if (e instanceof OrderLineLimitError) throw new OutboundError(e.message);
+          throw e;
+        }
       }
     }
 

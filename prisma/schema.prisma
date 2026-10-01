@@ -25,6 +25,7 @@ model Product {
 
   inbounds         Inbound[]
   outbounds        Outbound[]
+  orderLines       TradeOrderLine[]
   stockMovements   StockMovement[]
   locationHistory  ProductLocationHistory[]
 
@@ -52,6 +53,8 @@ model Inbound {
   receivedAt DateTime @default(now()) // 입고일시
   version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
   requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  orderLineId String?                 // 발주 품목에서 입고 처리한 경우
+  orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
 
@@ -60,6 +63,7 @@ model Inbound {
 
   @@index([productId, receivedAt])
   @@index([receivedAt])
+  @@index([orderLineId])
 }
 
 enum StockMovementType {
@@ -121,14 +125,18 @@ model Outbound {
   shippedAt  DateTime @default(now()) // 출고일시
   version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
   requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  orderLineId String?                 // 수주 품목에서 출고 처리한 경우
+  orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
 
   stockMovements StockMovement[] // 원출고(OUTBOUND) 1건 + 정정(OUTBOUND_CORRECTION) n건
   revisions      OutboundRevision[]
+  dispatchItem   DispatchItem?      // 배차된 경우
 
   @@index([productId, shippedAt])
   @@index([shippedAt])
+  @@index([orderLineId])
 }
 
 // 출고 수정 기록
@@ -214,4 +222,117 @@ model ProductLocationHistory {
   createdAt     DateTime @default(now())
 
   @@index([productId, createdAt])
+}
+
+// ───────── 수발주 ─────────
+
+enum TradeOrderType {
+  PURCHASE // 발주 (공급처에 주문 → 입고)
+  SALES    // 수주 (거래처 주문 → 출고)
+}
+
+enum TradeOrderStatus {
+  OPEN      // 진행 전 (처리 수량 0)
+  PARTIAL   // 일부 입고/출고
+  DONE      // 전량 완료
+  CLOSED    // 잔량 종결 (남은 수량 처리 안 함)
+  CANCELLED // 취소 (처리 이력 없을 때만)
+}
+
+// 발주서 / 수주서
+model TradeOrder {
+  id        String           @id @default(uuid())
+  type      TradeOrderType
+  orderNo   String           @unique // PO-20261001-001 / SO-20261001-001
+  partner   String           // 공급처(발주) 또는 거래처(수주)
+  status    TradeOrderStatus @default(OPEN)
+  dueDate   DateTime?        // 입고 예정일 / 납기일 (KST 자정)
+  memo      String?
+  version   Int              @default(0)
+  requestId String?          @unique // 등록 요청 고유키
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  lines TradeOrderLine[]
+
+  @@index([type, status, createdAt])
+}
+
+// 발주/수주 품목
+model TradeOrderLine {
+  id           String     @id @default(uuid())
+  orderId      String
+  order        TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  seq          Int        // 품목 순서
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity     Int        // 주문 수량
+  unitPrice    Int?       // 단가
+  processedQty Int        @default(0) // 입고(발주) / 출고(수주) 처리된 수량
+
+  inbounds  Inbound[]
+  outbounds Outbound[]
+
+  @@unique([orderId, productId])
+  @@index([productId])
+}
+
+// ───────── 배차 ─────────
+
+enum DispatchStatus {
+  PLANNED    // 배차 (편성)
+  LOADED     // 상차 완료
+  IN_TRANSIT // 배송중
+  DELIVERED  // 배송 완료
+  CANCELLED  // 취소
+}
+
+// 차량
+model Vehicle {
+  id          String      @id @default(uuid())
+  plateNo     String      @unique // 차량번호
+  storageType StorageType // 적재 온도: 냉동 > 냉장 > 실온 (상위 온도 차량은 하위 상품도 실을 수 있음)
+  driverName  String
+  driverPhone String?
+  memo        String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  dispatches Dispatch[]
+}
+
+// 배차 (차량 1대의 배송 1회)
+model Dispatch {
+  id           String         @id @default(uuid())
+  dispatchNo   String         @unique // DSP-20261001-001
+  deliveryDate DateTime       // 배송일 (KST 자정)
+  vehicleId    String
+  vehicle      Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  status       DispatchStatus @default(PLANNED)
+  memo         String?
+  version      Int            @default(0)
+  requestId    String?        @unique
+  deliveredAt  DateTime?
+  cancelledAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  items DispatchItem[]
+
+  @@index([deliveryDate])
+  @@index([vehicleId, deliveryDate])
+}
+
+// 배차에 실린 출고 건 (출고 1건은 배차 1곳에만)
+model DispatchItem {
+  id         String   @id @default(uuid())
+  dispatchId String
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
+  outboundId String   @unique
+  outbound   Outbound @relation(fields: [outboundId], references: [id], onDelete: Restrict)
+  seq        Int      // 배송 순서
+  createdAt  DateTime @default(now())
+
+  @@index([dispatchId])
 }

@@ -1,0 +1,250 @@
+import type { Prisma, TradeOrderStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { nextDocNumber } from "@/lib/doc-number";
+import { changeStock, InsufficientStockError, isUniqueViolation } from "@/modules/stock/service";
+import { ORDER_PREFIX, type OrderTypeCode } from "./codes";
+import { refreshOrderStatus } from "./lines";
+import type { OrderCreateInput, OrderProcessInput } from "./validation";
+
+export class OrderError extends Error {}
+
+const TX = { timeout: 30_000 };
+
+/** 발주/수주 등록 */
+export async function createOrder(input: OrderCreateInput) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const dup = await tx.tradeOrder.findUnique({ where: { requestId: input.requestId }, select: { orderNo: true } });
+      if (dup) throw new OrderError(`이미 처리된 요청입니다. (${dup.orderNo})`);
+
+      const ids = input.lines.map((l) => l.productId);
+      const found = await tx.product.count({ where: { id: { in: ids } } });
+      if (found !== ids.length) throw new OrderError("존재하지 않는 상품이 포함되어 있습니다.");
+
+      const orderNo = await nextDocNumber(tx, ORDER_PREFIX[input.type], async (head) => {
+        const last = await tx.tradeOrder.findFirst({
+          where: { orderNo: { startsWith: head } },
+          orderBy: { orderNo: "desc" },
+          select: { orderNo: true },
+        });
+        return last?.orderNo ?? null;
+      });
+
+      return tx.tradeOrder.create({
+        data: {
+          type: input.type,
+          orderNo,
+          partner: input.partner,
+          dueDate: input.dueDate,
+          memo: input.memo,
+          requestId: input.requestId,
+          lines: {
+            create: input.lines.map((l, i) => ({
+              seq: i + 1,
+              productId: l.productId,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+            })),
+          },
+        },
+        select: { id: true, orderNo: true },
+      });
+    }, TX);
+  } catch (e) {
+    if (isUniqueViolation(e, "requestId")) throw new OrderError("이미 처리된 요청입니다.");
+    throw e;
+  }
+}
+
+async function lockOrder(tx: Prisma.TransactionClient, orderId: string) {
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "TradeOrder" WHERE "id" = ${orderId} FOR UPDATE`;
+  if (rows.length === 0) throw new OrderError("존재하지 않는 주문입니다.");
+}
+
+/**
+ * 발주 → 입고 / 수주 → 출고 처리 (단일 트랜잭션)
+ * - 주문 행 잠금 + version 확인 (동시 처리·화면이 오래된 경우 거부)
+ * - 품목별 남은 수량 이하만 처리
+ * - 품목마다 입고/출고 기록 + 재고 변경(출고는 재고 부족 시 전체 취소) + 처리수량 증가
+ * - 요청키(requestId:lineId)로 같은 요청 이중 처리 차단
+ */
+export async function processOrder(input: OrderProcessInput) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await lockOrder(tx, input.orderId);
+      const order = await tx.tradeOrder.findUniqueOrThrow({
+        where: { id: input.orderId },
+        include: { lines: { include: { product: { select: { name: true } } } } },
+      });
+      if (order.status !== "OPEN" && order.status !== "PARTIAL") {
+        throw new OrderError("완료·종결·취소된 주문은 처리할 수 없습니다.");
+      }
+      if (order.version !== input.version) {
+        throw new OrderError("그 사이 주문 내용이 바뀌었습니다. 새로고침 후 다시 시도하세요.");
+      }
+
+      const keyOf = (lineId: string) => `${input.requestId}:${lineId}`;
+      const firstKey = keyOf(input.lines[0].lineId);
+      const already =
+        order.type === "PURCHASE"
+          ? await tx.inbound.findUnique({ where: { requestId: firstKey }, select: { id: true } })
+          : await tx.outbound.findUnique({ where: { requestId: firstKey }, select: { id: true } });
+      if (already) throw new OrderError("이미 처리된 요청입니다.");
+
+      let totalQty = 0;
+      for (const req of input.lines) {
+        const line = order.lines.find((l) => l.id === req.lineId);
+        if (!line) throw new OrderError("이 주문에 없는 품목이 포함되어 있습니다.");
+        const remaining = line.quantity - line.processedQty;
+        if (req.quantity > remaining) {
+          throw new OrderError(
+            `${line.product.name}: 남은 수량(${remaining.toLocaleString()})보다 많이 처리할 수 없습니다.`
+          );
+        }
+
+        if (order.type === "PURCHASE") {
+          const ib = await tx.inbound.create({
+            data: {
+              productId: line.productId,
+              quantity: req.quantity,
+              unitCost: line.unitPrice,
+              supplier: order.partner,
+              memo: input.memo ?? `발주 ${order.orderNo}`,
+              receivedAt: input.at,
+              requestId: keyOf(line.id),
+              orderLineId: line.id,
+            },
+          });
+          await changeStock(tx, { productId: line.productId, delta: req.quantity, type: "INBOUND", inboundId: ib.id });
+        } else {
+          const ob = await tx.outbound.create({
+            data: {
+              productId: line.productId,
+              quantity: req.quantity,
+              unitPrice: line.unitPrice,
+              customer: order.partner,
+              memo: input.memo ?? `수주 ${order.orderNo}`,
+              shippedAt: input.at,
+              requestId: keyOf(line.id),
+              orderLineId: line.id,
+            },
+          });
+          try {
+            await changeStock(tx, { productId: line.productId, delta: -req.quantity, type: "OUTBOUND", outboundId: ob.id });
+          } catch (e) {
+            if (e instanceof InsufficientStockError) {
+              throw new OrderError(
+                `${line.product.name}: 재고가 부족합니다. (현재고 ${e.currentStock.toLocaleString()}, 출고 요청 ${e.requested.toLocaleString()})`
+              );
+            }
+            throw e;
+          }
+        }
+
+        await tx.tradeOrderLine.update({
+          where: { id: line.id },
+          data: { processedQty: { increment: req.quantity } },
+        });
+        totalQty += req.quantity;
+      }
+
+      await tx.tradeOrder.update({ where: { id: order.id }, data: { version: { increment: 1 } } });
+      const status = await refreshOrderStatus(tx, order.id);
+      return { orderNo: order.orderNo, type: order.type as OrderTypeCode, lineCount: input.lines.length, totalQty, status };
+    }, TX);
+  } catch (e) {
+    if (isUniqueViolation(e, "requestId")) throw new OrderError("이미 처리된 요청입니다.");
+    throw e;
+  }
+}
+
+/** 잔량 종결 (일부 처리된 주문의 남은 수량을 더 처리하지 않음) / 취소 (처리 이력 없는 주문) */
+export async function finishOrder(orderId: string, version: number, action: "close" | "cancel") {
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    const order = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { orderNo: true, status: true, version: true, lines: { select: { processedQty: true } } },
+    });
+    if (order.version !== version) throw new OrderError("그 사이 주문 내용이 바뀌었습니다. 새로고침 후 다시 시도하세요.");
+    const processed = order.lines.some((l) => l.processedQty > 0);
+    let status: TradeOrderStatus;
+    if (action === "cancel") {
+      if (order.status !== "OPEN" || processed) throw new OrderError("처리 이력이 있는 주문은 취소할 수 없습니다. 잔량 종결을 사용하세요.");
+      status = "CANCELLED";
+    } else {
+      if (order.status !== "PARTIAL") throw new OrderError("일부 처리된 주문만 잔량 종결할 수 있습니다.");
+      status = "CLOSED";
+    }
+    await tx.tradeOrder.update({ where: { id: orderId }, data: { status, version: { increment: 1 } } });
+    return { orderNo: order.orderNo, status };
+  });
+}
+
+// ───────── 조회 ─────────
+
+export const ORDER_PAGE_SIZE = 30;
+
+export async function listOrders(f: { type: OrderTypeCode; status: string; q: string; page: number }) {
+  const where: Prisma.TradeOrderWhereInput = { type: f.type };
+  if (f.status === "active") where.status = { in: ["OPEN", "PARTIAL"] };
+  else if (["OPEN", "PARTIAL", "DONE", "CLOSED", "CANCELLED"].includes(f.status)) where.status = f.status as TradeOrderStatus;
+  if (f.q) {
+    where.OR = [
+      { orderNo: { contains: f.q, mode: "insensitive" } },
+      { partner: { contains: f.q, mode: "insensitive" } },
+      { lines: { some: { product: { name: { contains: f.q, mode: "insensitive" } } } } },
+    ];
+  }
+  const [total, rows] = await Promise.all([
+    prisma.tradeOrder.count({ where }),
+    prisma.tradeOrder.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      skip: (Math.max(1, f.page) - 1) * ORDER_PAGE_SIZE,
+      take: ORDER_PAGE_SIZE,
+      include: {
+        lines: {
+          orderBy: { seq: "asc" },
+          select: { quantity: true, processedQty: true, unitPrice: true, product: { select: { name: true } } },
+        },
+      },
+    }),
+  ]);
+  return { total, rows };
+}
+
+export async function getOrderDetail(id: string) {
+  return prisma.tradeOrder.findUnique({
+    where: { id },
+    include: {
+      lines: {
+        orderBy: { seq: "asc" },
+        include: {
+          product: { select: { id: true, sku: true, name: true, baseUnit: true, stock: true } },
+          inbounds: { select: { id: true, quantity: true, receivedAt: true }, orderBy: { receivedAt: "asc" } },
+          outbounds: { select: { id: true, quantity: true, shippedAt: true }, orderBy: { shippedAt: "asc" } },
+        },
+      },
+    },
+  });
+}
+
+export async function listProductsForOrder() {
+  return prisma.product.findMany({
+    select: { id: true, sku: true, name: true, category: true, price: true, stock: true, baseUnit: true },
+    orderBy: [{ category: "asc" }, { sku: "asc" }],
+  });
+}
+
+/** 거래처 자동완성 (최근 사용 순) */
+export async function listRecentPartners(type: OrderTypeCode, limit = 30) {
+  const rows = await prisma.tradeOrder.groupBy({
+    by: ["partner"],
+    where: { type },
+    _max: { createdAt: true },
+    orderBy: { _max: { createdAt: "desc" } },
+    take: limit,
+  });
+  return rows.map((r) => r.partner);
+}

@@ -21,8 +21,8 @@ const groups: { title?: string; menus: Menu[] }[] = [
   {
     title: "업무",
     menus: [
-      { label: "수발주", href: "/orders", dev: true },
-      { label: "배차관리", href: "/dispatch", dev: true },
+      { label: "수발주", href: "/orders" },
+      { label: "배차관리", href: "/dispatch" },
     ],
   },
   {

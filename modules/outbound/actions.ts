@@ -25,6 +25,8 @@ function revalidateStockPages() {
   revalidatePath("/outbound");
   revalidatePath("/inbound"); // 수정 모달의 현재고
   revalidatePath("/products/new"); // 현재고 표시
+  revalidatePath("/orders", "layout"); // 수주 출고 수량
+  revalidatePath("/dispatch", "layout"); // 배차 품목 수량
 }
 
 export type OutboundActionState = {

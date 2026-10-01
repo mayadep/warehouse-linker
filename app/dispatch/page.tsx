@@ -1,17 +1,122 @@
-import UnderDevelopment from "@/components/UnderDevelopment";
+import Link from "next/link";
+import { connection } from "next/server";
+import { parseKstDate, todayKst, toKstDate } from "@/lib/datetime";
+import { DISPATCH_STATUS_LABELS, type DispatchStatusCode } from "@/modules/dispatch/codes";
+import { listDispatchesByDate, listUnassignedOutbounds, listVehicles } from "@/modules/dispatch/service";
+import { storageTypeForCategory } from "@/modules/warehouse/assign";
+import DispatchCard, { type DispatchView } from "./DispatchCard";
+import DispatchCreateButton from "./DispatchCreateButton";
+import type { OutboundOption } from "./OutboundPicker";
 
-export default function DispatchPage() {
+const dtFmt = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+type OB = Awaited<ReturnType<typeof listUnassignedOutbounds>>[number];
+function toOption(o: OB): OutboundOption {
+  return {
+    id: o.id,
+    shippedAtText: dtFmt.format(o.shippedAt),
+    customer: o.customer,
+    sku: o.product.sku,
+    name: o.product.name,
+    quantity: o.quantity,
+    baseUnit: o.product.baseUnit,
+    required: storageTypeForCategory(o.product.category),
+  };
+}
+
+function shiftDate(ymd: string, days: number) {
+  const d = parseKstDate(ymd)!;
+  return toKstDate(new Date(d.getTime() + days * 24 * 60 * 60 * 1000));
+}
+
+export default async function DispatchPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  await connection();
+  const sp = await searchParams;
+  const raw = (Array.isArray(sp.date) ? sp.date[0] : sp.date) ?? "";
+  const date = parseKstDate(raw) ? raw : todayKst();
+  const day = parseKstDate(date)!;
+
+  const [dispatches, unassigned, vehicles] = await Promise.all([
+    listDispatchesByDate(day),
+    listUnassignedOutbounds(),
+    listVehicles(true),
+  ]);
+  const options = unassigned.map(toOption);
+  const views: DispatchView[] = dispatches.map((d) => ({
+    id: d.id,
+    dispatchNo: d.dispatchNo,
+    version: d.version,
+    status: d.status as DispatchStatusCode,
+    memo: d.memo,
+    deliveredAtText: d.deliveredAt ? dtFmt.format(d.deliveredAt) : null,
+    vehicle: {
+      plateNo: d.vehicle.plateNo,
+      storageType: d.vehicle.storageType,
+      driverName: d.vehicle.driverName,
+      driverPhone: d.vehicle.driverPhone,
+    },
+    items: d.items.map((i) => ({ id: i.id, seq: i.seq, outbound: toOption(i.outbound) })),
+  }));
+  const count = (s: DispatchStatusCode) => views.filter((v) => v.status === s).length;
+
   return (
-    <UnderDevelopment
-      title="배차관리"
-      description="출고 건을 차량·기사에 배정하고 배송 진행 상태를 관리하는 화면입니다."
-      planned={[
-        "차량·기사 등록 (차량번호, 적재 유형: 냉장/냉동/상온, 연락처)",
-        "출고 건 배차 (날짜별 배차표, 차량별 적재 목록)",
-        "보관유형에 맞는 차량 배정 확인 (냉동 상품 → 냉동 차량)",
-        "배송 상태 관리 (배차, 상차, 배송중, 완료)",
-        "배송 순서·경로 메모",
-      ]}
-    />
+    <div className="max-w-5xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold">배차관리</h2>
+          <Link href="/dispatch/vehicles" className="text-sm text-blue-700 hover:underline">
+            차량 관리 ›
+          </Link>
+        </div>
+        <DispatchCreateButton
+          date={date}
+          vehicles={vehicles.map((v) => ({ id: v.id, plateNo: v.plateNo, storageType: v.storageType, driverName: v.driverName }))}
+          outbounds={options}
+        />
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <Link href={`/dispatch?date=${shiftDate(date, -1)}`} className="rounded border px-2 py-1 hover:bg-gray-100">‹ 전날</Link>
+        <form className="flex items-center gap-2">
+          <input type="date" name="date" defaultValue={date} className="rounded border border-gray-300 px-2 py-1" />
+          <button className="rounded border px-2 py-1 hover:bg-gray-100">이동</button>
+        </form>
+        <Link href={`/dispatch?date=${shiftDate(date, 1)}`} className="rounded border px-2 py-1 hover:bg-gray-100">다음날 ›</Link>
+        {date !== todayKst() && (
+          <Link href="/dispatch" className="px-2 text-gray-500 hover:underline">오늘</Link>
+        )}
+        <span className="ml-auto text-gray-500">
+          배차 {views.length}건
+          {(["PLANNED", "LOADED", "IN_TRANSIT", "DELIVERED"] as const)
+            .filter((s) => count(s) > 0)
+            .map((s) => ` · ${DISPATCH_STATUS_LABELS[s]} ${count(s)}`)
+            .join("")}
+          {" · "}미배차 출고 {options.length}건
+        </span>
+      </div>
+
+      {vehicles.length === 0 && (
+        <p className="mb-4 rounded border border-yellow-300 bg-yellow-50 p-3 text-sm">
+          등록된 차량이 없습니다. <Link href="/dispatch/vehicles" className="text-blue-700 underline">차량 관리</Link>에서 먼저 차량을 등록하세요.
+        </p>
+      )}
+
+      {views.length === 0 ? (
+        <p className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">{date} 배차가 없습니다.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {views.map((v) => (
+            <DispatchCard key={v.id} d={v} unassigned={options} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
