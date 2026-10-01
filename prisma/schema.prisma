@@ -1,0 +1,217 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String   // 상품명
+  category    String   // 카테고리
+  price       Int      // 판매가
+  stock       Int      // 재고 수량 (StockMovement 합계와 일치, DB CHECK >= 0)
+  sku         String   @unique // 상품 코드 (SKU)
+  baseUnit    ProductUnit @default(EA) // 기본단위 (재고 수량의 단위)
+  boxQty      Int      @default(1)    // 박스당 입수 (BOX 단위 상품은 1)
+  trackExpiry Boolean  @default(true) // 유통기한 관리 여부
+  safetyStock Int      @default(0)    // 안전재고 (현재고가 이 값 이하이면 '부족', DB CHECK >= 0)
+  locationId  String?  @unique        // 기본 보관위치 (한 칸에 한 상품만)
+  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inbounds         Inbound[]
+  outbounds        Outbound[]
+  stockMovements   StockMovement[]
+  locationHistory  ProductLocationHistory[]
+
+  @@index([category, sku]) // 재고현황 분류 필터 + 코드순
+  @@index([stock])         // 재고 없음 필터, 재고 적은 순 정렬
+}
+
+enum ProductUnit {
+  EA  // 개
+  BOX // 박스
+  CAN // 캔
+  L   // 리터
+  KG  // 킬로그램
+}
+
+// 입고 기록 (1건 = 1상품 입고)
+model Inbound {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity   Int      // 입고 수량 (기본단위, 양수)
+  unitCost   Int?     // 입고 단가 (원)
+  supplier   String?  // 공급처
+  memo       String?  // 비고
+  receivedAt DateTime @default(now()) // 입고일시
+  version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  stockMovements StockMovement[] // 원입고(INBOUND) 1건 + 정정(INBOUND_CORRECTION) n건
+  revisions      InboundRevision[]
+
+  @@index([productId, receivedAt])
+  @@index([receivedAt])
+}
+
+enum StockMovementType {
+  INBOUND  // 입고
+  OUTBOUND // 출고
+  ADJUST   // 재고조정
+  INBOUND_CORRECTION  // 입고정정 (입고 수량 수정)
+  OUTBOUND_CORRECTION // 출고정정 (출고 수량 수정)
+}
+
+// 재고 변동 이력 (모든 재고 변경은 여기에 기록)
+model StockMovement {
+  id          String            @id @default(uuid())
+  productId   String
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  type        StockMovementType
+  quantity    Int               // 변동 수량 (입고 +, 출고 -)
+  beforeStock Int               // 변경 전 재고
+  afterStock  Int               // 변경 후 재고
+  inboundId   String?
+  inbound     Inbound?          @relation(fields: [inboundId], references: [id], onDelete: Restrict)
+  outboundId  String?
+  outbound    Outbound?         @relation(fields: [outboundId], references: [id], onDelete: Restrict)
+  createdAt   DateTime          @default(now())
+
+  inboundRevision  InboundRevision?
+  outboundRevision OutboundRevision?
+
+  @@index([productId, createdAt])
+  @@index([inboundId])
+  @@index([outboundId])
+}
+
+// 입고 수정 기록 (누가 무엇을 왜 바꿨는지)
+model InboundRevision {
+  id              String         @id @default(uuid())
+  inboundId       String
+  inbound         Inbound        @relation(fields: [inboundId], references: [id], onDelete: Restrict)
+  reason          String         // 수정 사유
+  before          Json           // 변경 전 값 (바뀐 항목만)
+  after           Json           // 변경 후 값 (바뀐 항목만)
+  quantityDelta   Int            @default(0) // 수량 차이 (재고 증감량)
+  stockMovementId String?        @unique // 수량 변경 시 생성된 정정 재고이력
+  stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  createdAt       DateTime       @default(now())
+
+  @@index([inboundId, createdAt])
+}
+
+// 출고 기록 (1건 = 1상품 출고)
+model Outbound {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity   Int      // 출고 수량 (기본단위, 양수)
+  unitPrice  Int?     // 출고 단가 (원, 기본값은 상품 판매가)
+  customer   String?  // 출고처
+  memo       String?  // 비고
+  shippedAt  DateTime @default(now()) // 출고일시
+  version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  stockMovements StockMovement[] // 원출고(OUTBOUND) 1건 + 정정(OUTBOUND_CORRECTION) n건
+  revisions      OutboundRevision[]
+
+  @@index([productId, shippedAt])
+  @@index([shippedAt])
+}
+
+// 출고 수정 기록
+model OutboundRevision {
+  id              String         @id @default(uuid())
+  outboundId      String
+  outbound        Outbound       @relation(fields: [outboundId], references: [id], onDelete: Restrict)
+  reason          String         // 수정 사유
+  before          Json           // 변경 전 값 (바뀐 항목만)
+  after           Json           // 변경 후 값 (바뀐 항목만)
+  quantityDelta   Int            @default(0) // 출고 수량 차이 (재고 증감은 반대 부호)
+  stockMovementId String?        @unique // 수량 변경 시 생성된 정정 재고이력
+  stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  createdAt       DateTime       @default(now())
+
+  @@index([outboundId, createdAt])
+}
+
+// ───────── 창고 / 랙 / 구획 ─────────
+
+enum StorageType {
+  REFRIGERATED // 냉장
+  FROZEN       // 냉동
+  AMBIENT      // 실온
+}
+
+// 창고
+model Warehouse {
+  id          String      @id @default(uuid())
+  code        String      @unique // 창고코드 (예: RF1, FZ2, AM1)
+  name        String      // 창고명 (예: 냉장 1창고)
+  storageType StorageType // 보관유형
+  memo        String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  racks     Rack[]
+  locations Location[]
+}
+
+// 랙 (창고 안의 선반 1개)
+model Rack {
+  id           String    @id @default(uuid())
+  warehouseId  String
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  number       Int       // 랙 번호 (창고 안에서 1부터, 코드 R01)
+  levels       Int       // 단 수
+  binsPerLevel Int       // 단별 구획 수
+  createdAt    DateTime  @default(now())
+
+  locations Location[]
+
+  @@unique([warehouseId, number])
+}
+
+// 구획 (실제 물건을 놓는 위치 1칸)
+model Location {
+  id          String    @id @default(uuid())
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  rackId      String
+  rack        Rack      @relation(fields: [rackId], references: [id], onDelete: Restrict)
+  level       Int       // 단 (1 = 맨 아래)
+  bin         Int       // 구획 (1 = 왼쪽부터)
+  code        String    @unique // 위치코드 (예: RF1-R01-2-3)
+  createdAt   DateTime  @default(now())
+
+  product Product? // 이 칸을 기본 보관위치로 쓰는 상품
+
+  @@unique([rackId, level, bin])
+  @@index([warehouseId])
+}
+
+// 상품 보관위치 변경 이력 (직접 변경·교환·해제)
+model ProductLocationHistory {
+  id            String   @id @default(uuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  fromCode      String?  // 변경 전 위치코드 (없었으면 null)
+  toCode        String?  // 변경 후 위치코드 (해제면 null)
+  swappedWithSku String? // 자리를 서로 바꾼 상대 상품 코드
+  reason        String?  // 사유
+  createdAt     DateTime @default(now())
+
+  @@index([productId, createdAt])
+}

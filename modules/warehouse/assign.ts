@@ -1,0 +1,64 @@
+// 상품 기본 보관위치 랜덤 자동 배정
+import { prisma } from "@/lib/prisma";
+import { STORAGE_TYPES, type StorageTypeCode } from "./codes";
+
+/** 상품 분류 → 보관할 창고 유형 (목록에 없는 분류는 실온) */
+export const CATEGORY_STORAGE: Record<string, StorageTypeCode> = {
+  냉동식품: "FROZEN",
+  유제품: "REFRIGERATED",
+};
+
+export function storageTypeForCategory(category: string): StorageTypeCode {
+  return CATEGORY_STORAGE[category] ?? "AMBIENT";
+}
+
+type Counts = Record<StorageTypeCode, number>;
+const zero = (): Counts => ({ REFRIGERATED: 0, FROZEN: 0, AMBIENT: 0 });
+
+/**
+ * 위치가 없는 상품에만 빈 칸을 랜덤 배정 (단일 트랜잭션)
+ * - advisory lock 으로 동시 실행(버튼 연타)을 한 번에 하나씩 처리
+ * - 한 칸에 한 상품만 (DB unique 가 최종 보장)
+ * - 해당 유형 창고에 빈 칸이 모자라면 남은 상품은 배정하지 않음
+ */
+export async function assignRandomLocations() {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext('assign-product-locations'))`;
+
+      const products = await tx.product.findMany({
+        where: { locationId: null },
+        select: { id: true, category: true },
+        orderBy: { sku: "asc" },
+      });
+
+      const byType: Record<StorageTypeCode, string[]> = { REFRIGERATED: [], FROZEN: [], AMBIENT: [] };
+      for (const p of products) byType[storageTypeForCategory(p.category)].push(p.id);
+
+      const assigned = zero();
+      const unassigned = zero();
+
+      for (const type of STORAGE_TYPES) {
+        const ids = byType[type];
+        if (ids.length === 0) continue;
+        const free = await tx.$queryRaw<{ id: string }[]>`
+          SELECT l."id"
+          FROM "Location" l
+          JOIN "Warehouse" w ON w."id" = l."warehouseId"
+          WHERE w."storageType" = ${type}::"StorageType"
+            AND NOT EXISTS (SELECT 1 FROM "Product" p WHERE p."locationId" = l."id")
+          ORDER BY random()
+          LIMIT ${ids.length}`;
+        for (let i = 0; i < free.length; i++) {
+          await tx.product.update({ where: { id: ids[i] }, data: { locationId: free[i].id } });
+        }
+        assigned[type] = free.length;
+        unassigned[type] = ids.length - free.length;
+      }
+
+      const total = (c: Counts) => c.REFRIGERATED + c.FROZEN + c.AMBIENT;
+      return { assigned, unassigned, assignedTotal: total(assigned), unassignedTotal: total(unassigned) };
+    },
+    { timeout: 30_000 }
+  );
+}
