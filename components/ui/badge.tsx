@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "group/badge inline-flex h-6 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-[6px] border border-transparent px-2 text-xs font-semibold whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-primary/15 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&>svg]:pointer-events-none [&>svg]:size-3!",
   {
     variants: {
       variant: {
@@ -12,19 +12,19 @@ const badgeVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
         destructive:
-          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 [a]:hover:bg-destructive/20",
         outline:
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
-          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
+          "hover:bg-muted hover:text-muted-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        gray: "bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-500/20",
-        slate: "bg-slate-200 text-slate-700 ring-1 ring-inset ring-slate-500/20",
-        indigo: "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20",
-        sky: "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-600/20",
-        amber: "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20",
-        green: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20",
-        red: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20",
+        gray: "bg-[#f3f6fa] text-[#526078]",
+        slate: "bg-[#e3e8f0] text-[#526078]",
+        indigo: "bg-[#e8edff] text-[#1d3a8a]",
+        sky: "bg-[#eef5ff] text-[#2459a6]",
+        amber: "bg-[#fff7e1] text-[#996b00]",
+        green: "bg-[#eaf8f3] text-[#087a5b]",
+        red: "bg-[#fff0f0] text-[#b42323]",
       },
     },
     defaultVariants: {

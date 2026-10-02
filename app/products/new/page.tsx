@@ -79,8 +79,8 @@ export default async function NewProductPage({
 <table className="data-table">
         <thead>
           <tr>
-            <th>코드</th>
-            <th>품명</th>
+            <th className="left">코드</th>
+            <th className="left">품명</th>
             <th>분류</th>
             <th>단위</th>
             <th>박스당 입수</th>
@@ -102,8 +102,8 @@ export default async function NewProductPage({
           )}
           {list.map((p) => (
             <tr key={p.id} className={p.status === "PENDING" ? "bg-amber-50/40" : undefined}>
-              <td>{p.sku}</td>
-              <td>{p.name}</td>
+              <td className="left">{p.sku}</td>
+              <td className="left">{p.name}</td>
               <td>{p.category}</td>
               <td>{p.baseUnit}</td>
               <td>{p.baseUnit === "BOX" ? "-" : `1BOX = ${p.boxQty}${p.baseUnit}`}</td>

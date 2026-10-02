@@ -10,7 +10,7 @@ export default function Header() {
   const current = findMenu(pathname);
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b bg-background px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b bg-card px-6">
       {current && (
         <nav aria-label="현재 위치" className="flex items-center gap-1.5 text-sm">
           {current.group && (

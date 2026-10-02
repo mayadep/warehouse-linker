@@ -87,11 +87,25 @@
 - 라벨: `codes.ts`(`AUDIT_ACTION_LABELS`, `AUDIT_FIELD_LABELS`, 구분 배지 색 `AUDIT_CATEGORY_TONE`)
 - 화면 `/logs`(사이드바 관리 > 로그): 구분·기간(KST, 종료일 포함)·대상/내용 검색, 최신순 50건씩 페이지, 내용 클릭 시 상세 펼침
 
-## UI 테마 · 다크 모드 (2026-10-01)
-- shadcn/ui(base-nova) + 인디고 포인트. 색은 `app/globals.css`의 CSS 변수(`:root` 라이트 / `.dark` 다크)가 기준이며 `components/ui/*`(button·badge·input·textarea·native-select)를 공용으로 쓴다. Select는 폼 제출 호환을 위해 `NativeSelect`(네이티브 select 기반) 사용
-- 다크 모드: `<html>`에 `dark` 클래스. `app/layout.tsx`의 `<head>` 인라인 스크립트가 첫 화면 전에 저장값(localStorage `theme` = light|dark, OS 설정과 무관, 저장값이 없으면 라이트)을 적용해 깜빡임 방지. 사이드바 하단 `components/ThemeToggle.tsx`가 라이트 ↔ 다크 전환
-- 코드에 직접 쓴 팔레트(`text-gray-500`, `bg-amber-50`, `text-red-600` 등)는 화면마다 `dark:`를 붙이지 않고 `.dark` 안에서 `--color-gray-*`, `--color-amber-*` 등 팔레트 변수를 덮어써서 처리한다. **새 화면에서는 가능하면 `bg-card`, `text-muted-foreground`, `border` 같은 토큰을 쓰고, 팔레트 색을 새로 쓰면 `.dark` 덮어쓰기에 해당 색조·단계가 있는지 확인할 것**
-- 상태 배지는 `components/ui/badge.tsx` 색 variant(gray·slate·indigo·sky·amber·green·red)로 통일, 상태→색 매핑은 `modules/*/codes.ts`의 `*_STATUS_TONE`
+## 디자인 시스템 (Indigo Enterprise) — 요약본, 원문은 `docs/WMS_design-system_indigo.md`
+방향: 업무용으로 깔끔하고 정보 밀도 높게. **Indigo(중요 정보) + White(업무 영역) + Cool Gray(배경)**. 장식·그라데이션·과한 둥근 모서리·애니메이션 금지. 새 색·반경·버튼 스타일을 만들지 말고 기존 토큰과 `components/ui/*`를 재사용한다. 색·반경은 `app/globals.css`의 `:root` 변수가 기준.
+
+| 구분 | 값 | 구현 |
+| --- | --- | --- |
+| Primary | `#315EEA` (hover `#244ED8`) | `bg-primary` |
+| 사이드바 | 배경 `#101B3D`, 활성 `#1D3A8A`, 글자 `#C7D0E3` | `--sidebar*` |
+| 배경 / 카드 | 페이지 `#F6F8FC`, 카드·입력·헤더 `#FFFFFF` | `bg-background` / `bg-card` |
+| 텍스트 | 기본 `#172033`, 보조 `#526078`, placeholder `#98A2B3` | `text-foreground`, `text-muted-foreground` |
+| 테두리 | `#E3E8F0`, 입력 `#D3DAE6`, 포커스 `#6B82F5` | `border`, `border-input`, `--ring` |
+| 상태 색 | 정상 초록 · 부족 노랑 · 품절 빨강 · 예약 파랑 (색만으로 구분 금지, 라벨 병기) | `Badge` variant green·amber·red·sky |
+| 반경 | 입력·버튼 8px, 뱃지 6px, 카드 12px | `--radius-*` |
+| 높이 | 버튼 36px(sm 32 / lg 40), 입력 36px, 뱃지 24px, 헤더 64px, 표 행 48px | `components/ui/*` |
+| 폰트 | 영문·숫자·코드 Inter, 한글 Pretendard(`app/fonts/`에서 직접 제공, 외부 CDN 없음). 본문 14px, 표 13px | `layout.tsx`, `--font-sans` |
+
+- 표(`.data-table`): 기본 가운데(날짜·상태), 상품명·코드·거래처·비고는 th/td에 `.left`, 수량·금액은 `.num`(오른쪽). 수량은 단위까지 표기, 부족 재고는 노랑·품절은 빨강 글자
+- 다크 모드 없음. 전환 150~200ms ease-out, 그림자는 최소(카드 `0 1px 3px`, 모달·드롭다운만 강하게)
+- 같은 기능은 모든 화면에서 같은 UI(검색 버튼, 제목, 상태 뱃지, 표, 모달). 상태→색 매핑은 `modules/*/codes.ts`의 `*_STATUS_TONE`
+- 빈 상태·오류는 사용자가 이해할 한국어 문구로, 개발자용 오류는 로그로
 
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
@@ -99,7 +113,7 @@
 
 ## 화면
 - `/products/new` 상품등록·목록·검색 (※ 목록은 아직 전체 조회 — 상품 많아지면 페이지 나누기 필요)
-- `/inbound`, `/outbound`: 등록 폼 + 최근 20건 표(가운데 정렬, '수정 사유' 칸). 체크박스 1건 선택 → [선택 수정] native `<dialog>` 모달
+- `/inbound`, `/outbound`: 등록 폼 + 최근 20건 표(`.data-table` 정렬 규칙, '수정 사유' 칸). 체크박스 1건 선택 → [선택 수정] native `<dialog>` 모달
   - 모달 key에 version 넣지 말 것 (저장 직후 revalidate 리마운트로 성공 상태 유실)
   - 입고·출고 폼의 상품 선택 목록은 전체 상품을 내려받음 — 상품 많아지면 검색형(서버 검색)으로 바꿀 것
 - `/stock` 재고현황: 요약 카드, GET 필터 폼(조회 시 page 초기화), 표, 페이지 이동(필터 유지, 1 … 4 5 [6] 7 8 … N), 행 클릭 → 재고 원장 + 안전재고 설정 모달

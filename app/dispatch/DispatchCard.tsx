@@ -146,8 +146,8 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
           <thead>
             <tr>
               <th className="w-10">순서</th>
-              <th>출고처</th>
-              <th>품목</th>
+              <th className="left">출고처</th>
+              <th className="left">품목</th>
               <th className="num">수량</th>
               <th>보관</th>
               <th>출고일시</th>
@@ -158,8 +158,8 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
             {d.items.map((i) => (
               <tr key={i.id}>
                 <td>{i.seq}</td>
-                <td>{i.outbound.customer ?? "-"}</td>
-                <td className="text-left">
+                <td className="left">{i.outbound.customer ?? "-"}</td>
+                <td className="left">
                   <span className="font-mono text-xs text-gray-500">{i.outbound.sku}</span> {i.outbound.name}
                 </td>
                 <td className="num whitespace-nowrap">

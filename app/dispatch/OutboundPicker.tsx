@@ -53,8 +53,8 @@ export default function OutboundPicker({
               />
             </th>
             <th>출고일시</th>
-            <th>출고처</th>
-            <th>품목</th>
+            <th className="left">출고처</th>
+            <th className="left">품목</th>
             <th className="num">수량</th>
             <th>보관</th>
           </tr>
@@ -68,8 +68,8 @@ export default function OutboundPicker({
                   <input type="checkbox" aria-label={`${o.name} 선택`} disabled={!can} checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
                 </td>
                 <td className="whitespace-nowrap text-xs">{o.shippedAtText}</td>
-                <td>{o.customer ?? "-"}</td>
-                <td className="text-left">
+                <td className="left">{o.customer ?? "-"}</td>
+                <td className="left">
                   <span className="font-mono text-xs text-gray-500">{o.sku}</span> {o.name}
                 </td>
                 <td className="num whitespace-nowrap">

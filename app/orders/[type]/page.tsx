@@ -60,7 +60,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
         <OrderCreateButton type={type} products={products} partners={partners} />
       </div>
       <form className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3">
-        <NativeSelect name="status" defaultValue={status} className="[&_select]:bg-background">
+        <NativeSelect name="status" defaultValue={status} className="[&_select]:bg-card">
           <option value="active">진행 중 (진행 전 + 일부 처리)</option>
           <option value="all">전체</option>
           {(Object.keys(ORDER_STATUS_LABELS) as OrderStatusCode[]).map((s) => (
@@ -71,7 +71,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
         </NativeSelect>
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="w-64 bg-background pl-8" name="q" defaultValue={q} placeholder={`번호·${ORDER_PARTNER_LABELS[type]}·품명 검색`} />
+          <Input className="w-64 bg-card pl-8" name="q" defaultValue={q} placeholder={`번호·${ORDER_PARTNER_LABELS[type]}·품명 검색`} />
         </div>
         <Button type="submit">
           <SearchIcon data-icon="inline-start" />
@@ -89,10 +89,10 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
 <table className="data-table">
         <thead>
           <tr>
-            <th>번호</th>
+            <th className="left">번호</th>
             <th>등록일</th>
-            <th>{ORDER_PARTNER_LABELS[type]}</th>
-            <th>품목</th>
+            <th className="left">{ORDER_PARTNER_LABELS[type]}</th>
+            <th className="left">품목</th>
             <th className="num">주문 수량</th>
             <th className="num">{ORDER_PROCESS_LABELS[type]} 진행</th>
             <th className="num">금액</th>
@@ -115,14 +115,14 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
             const st = o.status as OrderStatusCode;
             return (
               <tr key={o.id} className="transition-colors hover:bg-indigo-50">
-                <td>
+                <td className="left">
                   <Link href={`/orders/${typeParam}/${o.id}`} className="font-mono text-xs font-medium text-indigo-700 hover:underline">
                     {o.orderNo}
                   </Link>
                 </td>
                 <td className="text-muted-foreground">{toKstDate(o.createdAt)}</td>
-                <td>{o.partner}</td>
-                <td className="max-w-56 truncate" title={o.lines.map((l) => l.product.name).join(", ")}>
+                <td className="left">{o.partner}</td>
+                <td className="left max-w-56 truncate" title={o.lines.map((l) => l.product.name).join(", ")}>
                   {o.lines[0]?.product.name}
                   {o.lines.length > 1 && <span className="text-muted-foreground"> 외 {o.lines.length - 1}</span>}
                 </td>

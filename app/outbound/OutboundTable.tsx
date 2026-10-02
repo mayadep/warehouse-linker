@@ -166,15 +166,15 @@ export default function OutboundTable({
             )}
             <th>출고일시</th>
             <th>상태</th>
-            <th>코드</th>
-            <th>품명</th>
+            <th className="left">코드</th>
+            <th className="left">품명</th>
             <th className="num">수량</th>
             {showPrice && <th className="num">단가</th>}
             <th className="num" title="최초 출고(확정) 시점의 재고 변동 (수정분은 수정 기록 참고)">재고 변동(최초)</th>
-            <th>출고처</th>
-            <th>비고</th>
+            <th className="left">출고처</th>
+            <th className="left">비고</th>
             <th>등록자</th>
-            <th>수정·취소 사유</th>
+            <th className="left">수정·취소 사유</th>
           </tr>
         </thead>
         <tbody>
@@ -229,8 +229,8 @@ export default function OutboundTable({
                     </span>
                   )}
                 </td>
-                <td>{r.sku}</td>
-                <td>{r.productName}</td>
+                <td className="left">{r.sku}</td>
+                <td className="left">{r.productName}</td>
                 <td className="num">{r.quantity.toLocaleString()}</td>
                 {showPrice && <td className="num">{r.unitPrice == null ? "-" : r.unitPrice.toLocaleString()}</td>}
                 <td className="num whitespace-nowrap text-gray-500">
@@ -238,12 +238,12 @@ export default function OutboundTable({
                     ? `${r.originalMovement.beforeStock.toLocaleString()} → ${r.originalMovement.afterStock.toLocaleString()}`
                     : "-"}
                 </td>
-                <td>{r.customer ?? "-"}</td>
-                <td className="max-w-40 truncate">{r.memo ?? ""}</td>
+                <td className="left">{r.customer ?? "-"}</td>
+                <td className="left max-w-40 truncate">{r.memo ?? ""}</td>
                 <td className="text-gray-500">{r.createdByName ?? "-"}</td>
                 {/* 취소 사유 또는 최근 수정 사유 (마우스를 올리면 최근 수정 기록 전체) */}
                 <td
-                  className="max-w-48 truncate text-gray-600"
+                  className="left max-w-48 truncate text-gray-600"
                   title={
                     r.revisions.length > 0
                       ? r.revisions.map((rv) => `${rv.createdAtText} ${rv.reason}`).join("\n")

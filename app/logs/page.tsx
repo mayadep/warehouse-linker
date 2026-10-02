@@ -87,7 +87,7 @@ export default async function LogsPage({
       </div>
 
       <form className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3">
-        <NativeSelect name="category" defaultValue={filter.category} className="[&_select]:bg-background">
+        <NativeSelect name="category" defaultValue={filter.category} className="[&_select]:bg-card">
           <option value="">전체 구분</option>
           {AUDIT_CATEGORIES.map((c) => (
             <option key={c} value={c}>
@@ -95,12 +95,12 @@ export default async function LogsPage({
             </option>
           ))}
         </NativeSelect>
-        <Input type="date" name="from" defaultValue={filter.from} className="w-40 bg-background" aria-label="시작일" />
+        <Input type="date" name="from" defaultValue={filter.from} className="w-40 bg-card" aria-label="시작일" />
         <span className="text-sm text-muted-foreground">~</span>
-        <Input type="date" name="to" defaultValue={filter.to} className="w-40 bg-background" aria-label="종료일" />
+        <Input type="date" name="to" defaultValue={filter.to} className="w-40 bg-card" aria-label="종료일" />
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="w-64 bg-background pl-8" name="q" defaultValue={filter.q} placeholder="대상·내용 검색" />
+          <Input className="w-64 bg-card pl-8" name="q" defaultValue={filter.q} placeholder="대상·내용 검색" />
         </div>
         <Button type="submit">
           <SearchIcon data-icon="inline-start" />
@@ -122,8 +122,8 @@ export default async function LogsPage({
               <th>일시</th>
               <th>구분</th>
               <th>작업</th>
-              <th>대상</th>
-              <th>내용</th>
+              <th className="left">대상</th>
+              <th className="left">내용</th>
               <th>작업자</th>
             </tr>
           </thead>
@@ -145,10 +145,10 @@ export default async function LogsPage({
                     <Badge variant={AUDIT_CATEGORY_TONE[cat]}>{AUDIT_CATEGORY_LABELS[cat]}</Badge>
                   </td>
                   <td className="whitespace-nowrap">{auditActionLabel(r.action)}</td>
-                  <td className="max-w-48 truncate" title={r.targetLabel ?? undefined}>
+                  <td className="left max-w-48 truncate" title={r.targetLabel ?? undefined}>
                     {r.targetLabel ?? "-"}
                   </td>
-                  <td className="max-w-xl">
+                  <td className="left max-w-xl">
                     {lines.length > 0 ? (
                       <details>
                         <summary className="cursor-pointer">{r.summary}</summary>

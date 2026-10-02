@@ -92,12 +92,12 @@ export default function RackTable({
 <table className="data-table">
         <thead>
           <tr>
-            <th>랙</th>
+            <th className="left">랙</th>
             <th className="num">단 수</th>
             <th className="num">단별 구획</th>
             <th className="num">구획 수</th>
             <th className="num">상품 배정</th>
-            <th>위치코드 범위</th>
+            <th className="left">위치코드 범위</th>
             <th>배치도</th>
           </tr>
         </thead>
@@ -111,14 +111,14 @@ export default function RackTable({
           )}
           {racks.map((r) => (
             <tr key={r.id} onClick={() => setOpenId(r.id)} className="cursor-pointer hover:bg-indigo-50">
-              <td className="font-mono font-medium">{rackCode(r.number)}</td>
+              <td className="left font-mono font-medium">{rackCode(r.number)}</td>
               <td className="num">{r.levels}</td>
               <td className="num">{r.binsPerLevel}</td>
               <td className="num">{r.locationCount.toLocaleString()}</td>
               <td className={`num ${usedByRack.get(r.id) ? "text-indigo-700" : "text-gray-400"}`}>
                 {(usedByRack.get(r.id) ?? 0).toLocaleString()}
               </td>
-              <td className="font-mono text-gray-600">
+              <td className="left font-mono text-gray-600">
                 {locationCode(warehouseCode, r.number, 1, 1)} ~ {locationCode(warehouseCode, r.number, r.levels, r.binsPerLevel)}
               </td>
               <td>

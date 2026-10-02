@@ -113,9 +113,9 @@ export default async function StockPage({
       <form className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3">
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="w-56 bg-background pl-8" name="q" defaultValue={filter.q} placeholder="코드·품명 검색" />
+          <Input className="w-56 bg-card pl-8" name="q" defaultValue={filter.q} placeholder="코드·품명 검색" />
         </div>
-        <NativeSelect name="category" defaultValue={filter.category} className="[&_select]:bg-background">
+        <NativeSelect name="category" defaultValue={filter.category} className="[&_select]:bg-card">
           <option value="">전체 분류</option>
           {categories.map((c) => (
             <option key={c} value={c}>
@@ -123,13 +123,13 @@ export default async function StockPage({
             </option>
           ))}
         </NativeSelect>
-        <NativeSelect name="status" defaultValue={filter.status} className="[&_select]:bg-background">
+        <NativeSelect name="status" defaultValue={filter.status} className="[&_select]:bg-card">
           <option value="all">전체 상태</option>
           <option value="short">부족 + 재고 없음</option>
           <option value="low">부족</option>
           <option value="out">재고 없음</option>
         </NativeSelect>
-        <NativeSelect name="sort" defaultValue={filter.sort} className="[&_select]:bg-background">
+        <NativeSelect name="sort" defaultValue={filter.sort} className="[&_select]:bg-card">
           <option value="sku">코드순</option>
           <option value="stock">재고 적은 순</option>
           <option value="name">품명순</option>

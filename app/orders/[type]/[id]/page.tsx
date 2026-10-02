@@ -122,8 +122,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
         <thead>
           <tr>
             <th>#</th>
-            <th>코드</th>
-            <th>품명</th>
+            <th className="left">코드</th>
+            <th className="left">품명</th>
             <th className="num">주문</th>
             <th className="num">{label}</th>
             <th className="num">남은 수량</th>
@@ -142,8 +142,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
             return (
               <tr key={l.id}>
                 <td className="text-muted-foreground">{l.seq}</td>
-                <td className="font-mono text-xs text-muted-foreground">{l.product.sku}</td>
-                <td>{l.product.name}</td>
+                <td className="left font-mono text-xs text-muted-foreground">{l.product.sku}</td>
+                <td className="left">{l.product.name}</td>
                 <td className="num">{l.quantity.toLocaleString()}</td>
                 <td className={`num ${l.processedQty >= l.quantity ? "text-emerald-700" : ""}`}>{l.processedQty.toLocaleString()}</td>
                 <td className={`num ${remaining > 0 ? "font-medium text-amber-700" : "text-gray-400"}`}>{remaining.toLocaleString()}</td>

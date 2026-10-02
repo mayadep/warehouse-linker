@@ -58,8 +58,8 @@ export default function StockTable({
 <table className="data-table [&_td]:whitespace-nowrap">
         <thead>
           <tr>
-            <th>코드</th>
-            <th>품명</th>
+            <th className="left">코드</th>
+            <th className="left">품명</th>
             <th>분류</th>
             <th>위치</th>
             <th>단위</th>
@@ -89,8 +89,8 @@ export default function StockTable({
                 onClick={() => setOpenId(r.id)}
                 className={`cursor-pointer border-b transition-colors last:border-b-0 hover:bg-indigo-50 ${r.status === "OUT" ? "bg-red-50/40" : r.status === "LOW" ? "bg-amber-50/40" : ""}`}
               >
-                <td className="font-mono text-xs text-muted-foreground">{r.sku}</td>
-                <td>
+                <td className="left font-mono text-xs text-muted-foreground">{r.sku}</td>
+                <td className="left">
                   <button
                     type="button"
                     className="font-medium text-indigo-700 hover:underline"

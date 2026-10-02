@@ -67,8 +67,8 @@ export default function UserManager({ users, currentUserId }: { users: UserRow[]
         <table className="data-table">
           <thead>
             <tr>
-              <th>아이디</th>
-              <th>이름</th>
+              <th className="left">아이디</th>
+              <th className="left">이름</th>
               <th>역할</th>
               <th>상태</th>
               <th>등록일</th>
@@ -78,11 +78,11 @@ export default function UserManager({ users, currentUserId }: { users: UserRow[]
           <tbody>
             {users.map((u) => (
               <tr key={u.id} className={u.isActive ? "" : "text-muted-foreground"}>
-                <td className="font-mono text-xs">
+                <td className="left font-mono text-xs">
                   {u.loginId}
                   {u.id === currentUserId && <span className="ml-1 text-muted-foreground">(나)</span>}
                 </td>
-                <td>{u.name}</td>
+                <td className="left">{u.name}</td>
                 <td>
                   <Badge variant={USER_ROLE_TONE[u.role]}>{USER_ROLE_LABELS[u.role]}</Badge>
                 </td>

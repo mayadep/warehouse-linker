@@ -94,7 +94,7 @@ export default function LocationEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">보관위치</span>
-        <span className="rounded bg-background px-2 py-0.5 font-mono">{currentCode ?? "없음"}</span>
+        <span className="rounded bg-card px-2 py-0.5 font-mono">{currentCode ?? "없음"}</span>
         <span className="text-gray-400">→</span>
         <NativeSelect aria-label="창고" className={sel} value={whId} onChange={(e) => onWarehouse(e.target.value)}>
           <option value="">창고</option>

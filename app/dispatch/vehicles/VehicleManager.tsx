@@ -80,13 +80,13 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
 <table className="data-table">
         <thead>
           <tr>
-            <th>차량번호</th>
+            <th className="left">차량번호</th>
             <th>적재 온도</th>
-            <th>실을 수 있는 상품</th>
-            <th>기사</th>
+            <th className="left">실을 수 있는 상품</th>
+            <th className="left">기사</th>
             <th>연락처</th>
             <th className="num">배차 횟수</th>
-            <th>비고</th>
+            <th className="left">비고</th>
             <th>상태</th>
           </tr>
         </thead>
@@ -98,15 +98,15 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
           )}
           {vehicles.map((v) => (
             <tr key={v.id} className={`${v.isActive ? "" : "text-gray-400"}`}>
-              <td className="font-medium">{v.plateNo}</td>
+              <td className="left font-medium">{v.plateNo}</td>
               <td><StorageBadge type={v.storageType} /></td>
-              <td className="text-xs text-gray-500">
+              <td className="left text-xs text-gray-500">
                 {v.storageType === "FROZEN" ? "냉동·냉장·실온" : v.storageType === "REFRIGERATED" ? "냉장·실온" : "실온"}
               </td>
-              <td>{v.driverName}</td>
+              <td className="left">{v.driverName}</td>
               <td>{v.driverPhone ?? "-"}</td>
               <td className="num">{v.dispatchCount.toLocaleString()}</td>
-              <td className="max-w-40 truncate">{v.memo ?? ""}</td>
+              <td className="left max-w-40 truncate">{v.memo ?? ""}</td>
               <td>
                 <form action={(fd) => startTransition(() => tAction(fd))} className="flex items-center justify-center gap-2">
                   <input type="hidden" name="vehicleId" value={v.id} />

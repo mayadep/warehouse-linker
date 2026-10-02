@@ -8,7 +8,7 @@ warehouse-linker
 
 ## Design System
 
-UI/UX를 작업할 때는 반드시 `DESIGN_SYSTEM.md`의 디자인 규칙을 따른다.
+UI/UX를 작업할 때는 반드시 `docs/WMS_design-system_indigo.md`의 디자인 규칙을 따른다.
 
 새로운 화면이나 컴포넌트를 만들 때
 - 색상
@@ -139,7 +139,7 @@ DB 연결 오류는 PostgreSQL Docker 컨테이너 상태를 확인한다.
 
 UI · 응답
 
-표는 가운데 정렬한다.
+표 정렬은 디자인 문서를 따른다. 기본 가운데(날짜·상태), 상품명·코드 등 텍스트는 `.left`, 수량·금액은 `.num`(오른쪽).
 
 서버 오류 메시지는 구체적인 한국어로 작성한다.
 

@@ -173,8 +173,8 @@ export default function StockLedgerDialog({
                     <th className="num">수량</th>
                     <th className="num">재고 (전 → 후)</th>
                     <th>입출고일시</th>
-                    <th>거래처</th>
-                    <th>비고 / 수정사유</th>
+                    <th className="left">거래처</th>
+                    <th className="left">비고 / 수정사유</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -197,8 +197,8 @@ export default function StockLedgerDialog({
                         {e.beforeStock.toLocaleString()} → {e.afterStock.toLocaleString()}
                       </td>
                       <td className="whitespace-nowrap text-gray-500">{e.tradeAtText ?? "-"}</td>
-                      <td>{e.partner ?? "-"}</td>
-                      <td className="max-w-48 truncate text-gray-600" title={e.note ?? undefined}>
+                      <td className="left">{e.partner ?? "-"}</td>
+                      <td className="left max-w-48 truncate text-gray-600" title={e.note ?? undefined}>
                         {e.note ?? ""}
                       </td>
                     </tr>
