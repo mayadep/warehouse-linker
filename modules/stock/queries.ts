@@ -63,7 +63,7 @@ function statusWhere(status: StockFilter["status"]): Prisma.ProductWhereInput {
 }
 
 function buildWhere(filter: StockFilter): Prisma.ProductWhereInput {
-  const and: Prisma.ProductWhereInput[] = [];
+  const and: Prisma.ProductWhereInput[] = [ACTIVE]; // 확정 대기 상품은 재고현황에서 제외
   if (filter.q) {
     and.push({
       OR: [
@@ -74,7 +74,7 @@ function buildWhere(filter: StockFilter): Prisma.ProductWhereInput {
   }
   if (filter.category) and.push({ category: filter.category });
   if (filter.status !== "all") and.push(statusWhere(filter.status));
-  return and.length ? { AND: and } : {};
+  return { AND: and };
 }
 
 function buildOrderBy(sort: StockFilter["sort"]): Prisma.ProductOrderByWithRelationInput[] {
@@ -84,14 +84,16 @@ function buildOrderBy(sort: StockFilter["sort"]): Prisma.ProductOrderByWithRelat
   return [{ sku: "asc" }];
 }
 
+const ACTIVE: Prisma.ProductWhereInput = { status: "ACTIVE" };
+
 /** 요약 (필터와 무관하게 전체 기준, DB 집계) */
 async function getStockSummary() {
   const [total, out, low, value] = await Promise.all([
-    prisma.product.count(),
-    prisma.product.count({ where: statusWhere("out") }),
-    prisma.product.count({ where: statusWhere("low") }),
+    prisma.product.count({ where: ACTIVE }),
+    prisma.product.count({ where: { AND: [ACTIVE, statusWhere("out")] } }),
+    prisma.product.count({ where: { AND: [ACTIVE, statusWhere("low")] } }),
     prisma.$queryRaw<{ total: bigint | null }[]>`
-      SELECT SUM("stock"::bigint * "price"::bigint) AS total FROM "Product"`,
+      SELECT SUM("stock"::bigint * "price"::bigint) AS total FROM "Product" WHERE "status" = 'ACTIVE'`,
   ]);
   return { total, out, low, totalValue: Number(value[0]?.total ?? 0) };
 }
@@ -106,6 +108,7 @@ export async function listStockStatus(filter: StockFilter) {
     prisma.product.count({ where }),
     getStockSummary(),
     prisma.product.findMany({
+      where: ACTIVE,
       distinct: ["category"],
       select: { category: true },
       orderBy: { category: "asc" },
@@ -140,12 +143,12 @@ export async function listStockStatus(filter: StockFilter) {
     ? await Promise.all([
         prisma.inbound.groupBy({
           by: ["productId"],
-          where: { productId: { in: ids } },
+          where: { productId: { in: ids }, status: "CONFIRMED" }, // 대기·취소 입고 제외
           _max: { receivedAt: true },
         }),
         prisma.outbound.groupBy({
           by: ["productId"],
-          where: { productId: { in: ids } },
+          where: { productId: { in: ids }, status: "CONFIRMED" }, // 대기·취소 출고 제외
           _max: { shippedAt: true },
         }),
       ])
@@ -184,8 +187,8 @@ export async function getStockLedger(productId: string, limit = 50) {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
       include: {
-        inbound: { select: { supplier: true, receivedAt: true, memo: true } },
-        outbound: { select: { customer: true, shippedAt: true, memo: true } },
+        inbound: { select: { supplier: true, receivedAt: true, memo: true, cancelReason: true } },
+        outbound: { select: { customer: true, shippedAt: true, memo: true, cancelReason: true } },
         inboundRevision: { select: { reason: true } },
         outboundRevision: { select: { reason: true } },
       },

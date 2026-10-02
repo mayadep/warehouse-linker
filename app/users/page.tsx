@@ -1,17 +1,37 @@
-import UnderDevelopment from "@/components/UnderDevelopment";
+import { connection } from "next/server";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
+import { listUsers } from "@/modules/user/service";
+import { toKstDate } from "@/lib/datetime";
+import UserManager from "./UserManager";
 
-export default function UsersPage() {
+export default async function UsersPage() {
+  await connection(); // 항상 요청 시점의 DB 데이터를 조회
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="사용자·권한" />;
+  const users = await listUsers();
+
   return (
-    <UnderDevelopment
-      title="사용자·권한"
-      description="로그인과 사용자별 권한을 관리하는 화면입니다. 모든 등록·수정·취소 기능에서 서버가 권한을 확인하게 됩니다."
-      planned={[
-        "로그인 / 로그아웃",
-        "사용자 등록·비활성화",
-        "역할별 권한 (관리자, 입출고 담당, 조회 전용 등)",
-        "서버 측 권한 확인 (화면에서 버튼을 숨기는 것만으로 막지 않음)",
-        "입출고·수정·위치 변경 이력에 처리자 기록",
-      ]}
-    />
+    <div>
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold tracking-tight">사용자·권한</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          직원: 상품 등록·입고 등록(관리자 확정 전까지 대기), 상품·입고·재고현황 조회(금액 제외) · 관리자: 확정·취소·삭제·금액 보기·모든 메뉴
+        </p>
+      </div>
+      <UserManager
+        currentUserId={user.id}
+        users={users.map((u) => ({
+          id: u.id,
+          loginId: u.loginId,
+          name: u.name,
+          role: u.role,
+          isActive: u.isActive,
+          version: u.version,
+          createdAtText: toKstDate(u.createdAt),
+        }))}
+      />
+    </div>
   );
 }

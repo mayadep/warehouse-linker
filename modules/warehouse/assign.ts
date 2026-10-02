@@ -1,6 +1,7 @@
 // 상품 기본 보관위치 랜덤 자동 배정
 import { prisma } from "@/lib/prisma";
-import { STORAGE_TYPES, type StorageTypeCode } from "./codes";
+import { STORAGE_TYPES, STORAGE_TYPE_LABELS, type StorageTypeCode } from "./codes";
+import { recordAudit } from "@/modules/audit/service";
 
 /** 상품 분류 → 보관할 창고 유형 (목록에 없는 분류는 실온) */
 export const CATEGORY_STORAGE: Record<string, StorageTypeCode> = {
@@ -27,7 +28,7 @@ export async function assignRandomLocations() {
       await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext('assign-product-locations'))`;
 
       const products = await tx.product.findMany({
-        where: { locationId: null },
+        where: { locationId: null, status: "ACTIVE" }, // 확정 대기 상품 제외
         select: { id: true, category: true },
         orderBy: { sku: "asc" },
       });
@@ -57,6 +58,15 @@ export async function assignRandomLocations() {
       }
 
       const total = (c: Counts) => c.REFRIGERATED + c.FROZEN + c.AMBIENT;
+      const byLabel = (c: Counts) => STORAGE_TYPES.map((t) => `${STORAGE_TYPE_LABELS[t]} ${c[t]}`).join(", ");
+      if (products.length > 0) {
+        await recordAudit(tx, {
+          category: "WAREHOUSE",
+          action: "LOCATION_AUTO_ASSIGN",
+          summary: `보관위치 자동 배정 ${total(assigned).toLocaleString()}개${total(unassigned) ? `, 빈 칸 부족으로 미배정 ${total(unassigned).toLocaleString()}개` : ""}`,
+          detail: { assigned: byLabel(assigned), unassigned: byLabel(unassigned) },
+        });
+      }
       return { assigned, unassigned, assignedTotal: total(assigned), unassignedTotal: total(unassigned) };
     },
     { timeout: 30_000 }

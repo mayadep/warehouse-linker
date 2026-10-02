@@ -39,11 +39,11 @@ export default function OutboundPicker({
   }
 
   return (
-    <div className="max-h-72 overflow-y-auto rounded border border-gray-200">
-      <table className="w-full text-center text-sm">
-        <thead className="sticky top-0 bg-background">
-          <tr className="border-b text-xs text-gray-500">
-            <th className="w-8 py-1">
+    <div className="max-h-72 overflow-auto rounded-lg border">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th className="w-8">
               <input
                 type="checkbox"
                 aria-label="전체 선택"
@@ -55,7 +55,7 @@ export default function OutboundPicker({
             <th>출고일시</th>
             <th>출고처</th>
             <th>품목</th>
-            <th>수량</th>
+            <th className="num">수량</th>
             <th>보관</th>
           </tr>
         </thead>
@@ -63,8 +63,8 @@ export default function OutboundPicker({
           {options.map((o) => {
             const can = ok(o);
             return (
-              <tr key={o.id} className={`border-b ${can ? "" : "bg-gray-50 text-gray-400"} ${selected.includes(o.id) ? "bg-indigo-50" : ""}`}>
-                <td className="py-1">
+              <tr key={o.id} className={`${can ? "" : "bg-gray-50 text-gray-400"} ${selected.includes(o.id) ? "bg-indigo-50" : ""}`}>
+                <td>
                   <input type="checkbox" aria-label={`${o.name} 선택`} disabled={!can} checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
                 </td>
                 <td className="whitespace-nowrap text-xs">{o.shippedAtText}</td>
@@ -72,7 +72,7 @@ export default function OutboundPicker({
                 <td className="text-left">
                   <span className="font-mono text-xs text-gray-500">{o.sku}</span> {o.name}
                 </td>
-                <td>
+                <td className="num whitespace-nowrap">
                   {o.quantity.toLocaleString()} {o.baseUnit}
                 </td>
                 <td className="text-xs" title={can ? "" : "이 차량 온도로는 실을 수 없습니다"}>

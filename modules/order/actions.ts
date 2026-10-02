@@ -1,5 +1,6 @@
 "use server";
 
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
 import { createOrder, finishOrder, processOrder, OrderError } from "./service";
 import { parseOrderCreateForm, parseOrderProcessForm, parseOrderRefForm, type OrderCreateErrors } from "./validation";
@@ -23,7 +24,7 @@ export type OrderCreateState = {
 };
 
 export async function createOrderAction(_prev: OrderCreateState, fd: FormData): Promise<OrderCreateState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseOrderCreateForm(fd);
   if (!parsed.ok) return { status: "error", message: "입력값을 확인하세요.", errors: parsed.errors, ts: Date.now() };
   try {
@@ -40,7 +41,7 @@ export async function createOrderAction(_prev: OrderCreateState, fd: FormData): 
 export type OrderActionState = { status: "idle" | "success" | "error"; message: string; ts?: number };
 
 export async function processOrderAction(_prev: OrderActionState, fd: FormData): Promise<OrderActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseOrderProcessForm(fd);
   if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
   try {
@@ -59,7 +60,7 @@ export async function processOrderAction(_prev: OrderActionState, fd: FormData):
 }
 
 export async function finishOrderAction(_prev: OrderActionState, fd: FormData): Promise<OrderActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseOrderRefForm(fd);
   if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
   const action = fd.get("action") === "cancel" ? "cancel" : "close";

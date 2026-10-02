@@ -142,13 +142,13 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
 
       {d.items.length > 0 && (
         <div className="mt-3 overflow-x-auto rounded-lg border">
-<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+<table className="data-table">
           <thead>
-            <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
-              <th className="w-10 py-1">순서</th>
+            <tr>
+              <th className="w-10">순서</th>
               <th>출고처</th>
               <th>품목</th>
-              <th>수량</th>
+              <th className="num">수량</th>
               <th>보관</th>
               <th>출고일시</th>
               {planned && <th className="w-12" />}
@@ -156,13 +156,13 @@ export default function DispatchCard({ d, unassigned }: { d: DispatchView; unass
           </thead>
           <tbody>
             {d.items.map((i) => (
-              <tr key={i.id} className="border-b">
-                <td className="py-1">{i.seq}</td>
+              <tr key={i.id}>
+                <td>{i.seq}</td>
                 <td>{i.outbound.customer ?? "-"}</td>
                 <td className="text-left">
                   <span className="font-mono text-xs text-gray-500">{i.outbound.sku}</span> {i.outbound.name}
                 </td>
-                <td>
+                <td className="num whitespace-nowrap">
                   {i.outbound.quantity.toLocaleString()} {i.outbound.baseUnit}
                 </td>
                 <td className="text-xs">{STORAGE_TYPE_LABELS[i.outbound.required]}</td>

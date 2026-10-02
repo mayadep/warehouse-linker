@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { connection } from "next/server";
 import { parseKstDate, todayKst, toKstDate } from "@/lib/datetime";
 import { DISPATCH_STATUS_LABELS, type DispatchStatusCode } from "@/modules/dispatch/codes";
@@ -39,6 +42,8 @@ function shiftDate(ymd: string, days: number) {
 
 export default async function DispatchPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="배차관리" />;
   const sp = await searchParams;
   const raw = (Array.isArray(sp.date) ? sp.date[0] : sp.date) ?? "";
   const date = parseKstDate(raw) ? raw : todayKst();
@@ -68,7 +73,7 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
   const count = (s: DispatchStatusCode) => views.filter((v) => v.status === s).length;
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">배차관리</h2>

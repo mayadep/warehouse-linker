@@ -24,8 +24,10 @@ const input = "w-full";
 
 export default function InboundForm({
   products,
+  showPrice,
 }: {
   products: InboundProductOption[];
+  showPrice: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     createInboundAction,
@@ -82,18 +84,22 @@ export default function InboundForm({
     <form
       ref={formRef}
       onSubmit={onSubmit}
-      className="flex max-w-xl flex-col gap-4"
+      className="grid grid-cols-4 gap-x-4 gap-y-3 rounded-lg border bg-card p-4"
       noValidate
     >
-      <div className="text-sm">
-        <span>상품</span>
+      <label className="col-span-2 text-sm">
+        상품 검색
         <Input
-          className={`${input} mb-2`}
+          className={input}
           placeholder="코드·품명·분류로 검색"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)} />
+      </label>
+      <div className="col-span-2 text-sm">
+        <span>상품</span>
         <NativeSelect
           name="productId"
+          aria-label="상품"
           className={input}
           value={productId}
           onChange={(e) => setProductId(e.target.value)}
@@ -119,67 +125,66 @@ export default function InboundForm({
         {err.productId && <p className="mt-1 text-xs text-red-600">{err.productId}</p>}
       </div>
 
-      <div className="flex gap-4">
-        <label className="flex-1 text-sm">
-          입고 수량
-          <Input
-            name="quantity"
-            type="number"
-            min={1}
-            step={1}
-            required
-            className={input}
-            placeholder="0" />
-          {err.quantity && <span className="mt-1 block text-xs text-red-600">{err.quantity}</span>}
-        </label>
-        <label className="flex-1 text-sm">
+      <label className="text-sm">
+        입고 수량
+        <Input
+          name="quantity"
+          type="number"
+          min={1}
+          step={1}
+          required
+          className={`${input} text-right tabular-nums`}
+          placeholder="0" />
+        {err.quantity && <span className="mt-1 block text-xs text-red-600">{err.quantity}</span>}
+      </label>
+      {/* 직원은 단가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
+      {showPrice && (
+        <label className="text-sm">
           입고 단가 (원, 선택)
           <Input
             name="unitCost"
             type="number"
             min={0}
             step={1}
-            className={input}
+            className={`${input} text-right tabular-nums`}
             placeholder="0" />
           {err.unitCost && <span className="mt-1 block text-xs text-red-600">{err.unitCost}</span>}
         </label>
-      </div>
-
-      <div className="flex gap-4">
-        <label className="flex-1 text-sm">
-          공급처 (선택)
-          <Input name="supplier" maxLength={100} className={input} placeholder="○○식자재" />
-          {err.supplier && <span className="mt-1 block text-xs text-red-600">{err.supplier}</span>}
-        </label>
-        <label className="flex-1 text-sm">
-          입고일시 (비우면 현재 시각)
-          <Input name="receivedAt" type="datetime-local" className={input} />
-          {err.receivedAt && <span className="mt-1 block text-xs text-red-600">{err.receivedAt}</span>}
-        </label>
-      </div>
-
+      )}
+      <label className={`text-sm ${showPrice ? "" : "col-span-2"}`}>
+        공급처 (선택)
+        <Input name="supplier" maxLength={100} className={input} placeholder="예: 한빛식자재" />
+        {err.supplier && <span className="mt-1 block text-xs text-red-600">{err.supplier}</span>}
+      </label>
       <label className="text-sm">
+        입고일시 (비우면 현재 시각)
+        <Input name="receivedAt" type="datetime-local" className={input} />
+        {err.receivedAt && <span className="mt-1 block text-xs text-red-600">{err.receivedAt}</span>}
+      </label>
+
+      <label className="col-span-3 text-sm">
         비고 (선택)
         <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className="mt-1 block text-xs text-red-600">{err.memo}</span>}
       </label>
-
-      <Button type="submit"
-        disabled={pending}>
-        {pending ? "처리 중..." : "입고 등록"}
-      </Button>
+      <div className="flex items-end">
+        <Button type="submit" className="w-full"
+          disabled={pending}>
+          {pending ? "처리 중..." : "입고 등록"}
+        </Button>
+      </div>
 
       {state.status === "confirm" ? (
         <div
           aria-live="polite"
-          className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="col-span-4 flex items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
           <p>{state.message}</p>
           <button
             name="confirmDuplicate"
             value="1"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
+            className="shrink-0 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             그래도 등록
           </button>
@@ -188,7 +193,7 @@ export default function InboundForm({
         state.message && (
           <p
             aria-live="polite"
-            className={`text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
+            className={`col-span-4 text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
           >
             {state.message}
           </p>

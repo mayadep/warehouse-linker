@@ -1,6 +1,8 @@
 import UnderDevelopment from "@/components/UnderDevelopment";
+import { requirePageUser } from "@/modules/user/auth";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requirePageUser();
   return (
     <UnderDevelopment
       title="대시보드"

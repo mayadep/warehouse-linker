@@ -120,3 +120,33 @@ export function parseOutboundUpdateForm(fd: FormData, now = new Date()): Outboun
     },
   };
 }
+
+/** 출고 확정 (관리자): 단가 입력 가능 */
+export type OutboundConfirmInput = { outboundId: string; version: number; unitPrice: number | null };
+
+export function parseOutboundConfirmForm(
+  fd: FormData
+): { ok: true; data: OutboundConfirmInput } | { ok: false; message: string } {
+  const outboundId = text(fd, "outboundId");
+  const version = parseVersion(fd);
+  if (!UUID_RE.test(outboundId) || version.error) return { ok: false, message: "잘못된 요청입니다. 새로고침 후 다시 시도하세요." };
+  const unitPrice = parseOptionalMoney(fd, "unitPrice", "출고단가", OUTBOUND_LIMITS.maxUnitPrice);
+  if (unitPrice.error) return { ok: false, message: unitPrice.error };
+  return { ok: true, data: { outboundId, version: version.value, unitPrice: unitPrice.value } };
+}
+
+/** 출고 취소(확정 건) · 삭제(대기 건): 사유 필수 */
+export type OutboundVoidInput = { outboundId: string; version: number; reason: string };
+
+export function parseOutboundVoidForm(
+  fd: FormData
+): { ok: true; data: OutboundVoidInput } | { ok: false; message: string } {
+  const outboundId = text(fd, "outboundId");
+  const version = parseVersion(fd);
+  if (!UUID_RE.test(outboundId) || version.error) return { ok: false, message: "잘못된 요청입니다. 새로고침 후 다시 시도하세요." };
+  const reason = text(fd, "reason");
+  if (!reason) return { ok: false, message: "사유를 입력하세요." };
+  if (reason.length > OUTBOUND_LIMITS.maxReasonLength)
+    return { ok: false, message: `사유는 ${OUTBOUND_LIMITS.maxReasonLength}자 이내로 입력하세요.` };
+  return { ok: true, data: { outboundId, version: version.value, reason } };
+}

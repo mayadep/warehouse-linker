@@ -20,6 +20,12 @@ model Product {
   safetyStock Int      @default(0)    // 안전재고 (현재고가 이 값 이하이면 '부족', DB CHECK >= 0)
   locationId  String?  @unique        // 기본 보관위치 (한 칸에 한 상품만)
   location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  status      ProductStatus @default(ACTIVE) // 직원 등록 = PENDING, 관리자 확정 후 ACTIVE (대기 상품은 입출고·주문 불가)
+  createdById   String?
+  createdBy     User?    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById String?
+  confirmedBy   User?    @relation("ProductConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -31,6 +37,12 @@ model Product {
 
   @@index([category, sku]) // 재고현황 분류 필터 + 코드순
   @@index([stock])         // 재고 없음 필터, 재고 적은 순 정렬
+  @@index([status])
+}
+
+enum ProductStatus {
+  PENDING // 등록 대기 (관리자 확정 전)
+  ACTIVE  // 확정
 }
 
 enum ProductUnit {
@@ -55,15 +67,32 @@ model Inbound {
   requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
   orderLineId String?                 // 발주 품목에서 입고 처리한 경우
   orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  status     InboundStatus @default(CONFIRMED) // 직원 등록 = PENDING (재고 미반영), 관리자 확정 시 재고 반영
+  createdById   String?
+  createdBy     User?     @relation("InboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById String?
+  confirmedBy   User?     @relation("InboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt   DateTime?
+  cancelledById String?
+  cancelledBy   User?     @relation("InboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledAt   DateTime?
+  cancelReason  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
 
-  stockMovements StockMovement[] // 원입고(INBOUND) 1건 + 정정(INBOUND_CORRECTION) n건
+  stockMovements StockMovement[] // 원입고(INBOUND) 1건 + 정정(INBOUND_CORRECTION) n건 + 취소(INBOUND_CANCEL) 0~1건
   revisions      InboundRevision[]
 
   @@index([productId, receivedAt])
   @@index([receivedAt])
   @@index([orderLineId])
+  @@index([status, receivedAt])
+}
+
+enum InboundStatus {
+  PENDING   // 등록 대기 (재고 미반영)
+  CONFIRMED // 확정 (재고 반영)
+  CANCELLED // 취소 (확정 후 취소, 재고 역이력)
 }
 
 enum StockMovementType {
@@ -72,6 +101,8 @@ enum StockMovementType {
   ADJUST   // 재고조정
   INBOUND_CORRECTION  // 입고정정 (입고 수량 수정)
   OUTBOUND_CORRECTION // 출고정정 (출고 수량 수정)
+  INBOUND_CANCEL      // 입고취소 (확정 입고 취소)
+  OUTBOUND_CANCEL     // 출고취소 (확정 출고 취소, 재고 복원)
 }
 
 // 재고 변동 이력 (모든 재고 변경은 여기에 기록)
@@ -127,16 +158,33 @@ model Outbound {
   requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
   orderLineId String?                 // 수주 품목에서 출고 처리한 경우
   orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  status     OutboundStatus @default(CONFIRMED) // 직원 등록 = PENDING (재고 미차감), 관리자 확정 시 재고 차감
+  createdById   String?
+  createdBy     User?     @relation("OutboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById String?
+  confirmedBy   User?     @relation("OutboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt   DateTime?
+  cancelledById String?
+  cancelledBy   User?     @relation("OutboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledAt   DateTime?
+  cancelReason  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
 
-  stockMovements StockMovement[] // 원출고(OUTBOUND) 1건 + 정정(OUTBOUND_CORRECTION) n건
+  stockMovements StockMovement[] // 원출고(OUTBOUND) 1건 + 정정(OUTBOUND_CORRECTION) n건 + 취소(OUTBOUND_CANCEL) 0~1건
   revisions      OutboundRevision[]
-  dispatchItem   DispatchItem?      // 배차된 경우
+  dispatchItem   DispatchItem?      // 배차된 경우 (확정 출고만 배차 가능)
 
   @@index([productId, shippedAt])
   @@index([shippedAt])
   @@index([orderLineId])
+  @@index([status, shippedAt])
+}
+
+enum OutboundStatus {
+  PENDING   // 등록 대기 (재고 미차감)
+  CONFIRMED // 확정 (재고 차감)
+  CANCELLED // 취소 (확정 후 취소, 재고 복원 역이력)
 }
 
 // 출고 수정 기록
@@ -335,4 +383,76 @@ model DispatchItem {
   createdAt  DateTime @default(now())
 
   @@index([dispatchId])
+}
+
+// ───────── 사용자 · 세션 ─────────
+
+enum UserRole {
+  STAFF // 직원: 상품등록·입고등록·출고등록 (대기 상태로)
+  ADMIN // 관리자: 확정·취소·삭제·금액 보기·모든 메뉴
+}
+
+model User {
+  id           String   @id @default(uuid())
+  loginId      String   @unique // 로그인 아이디 (소문자)
+  name         String
+  role         UserRole @default(STAFF)
+  passwordHash String   // scrypt (modules/user/password.ts)
+  isActive     Boolean  @default(true)
+  version      Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions          Session[]
+  productsCreated   Product[] @relation("ProductCreatedBy")
+  productsConfirmed Product[] @relation("ProductConfirmedBy")
+  inboundsCreated   Inbound[] @relation("InboundCreatedBy")
+  inboundsConfirmed Inbound[] @relation("InboundConfirmedBy")
+  inboundsCancelled Inbound[] @relation("InboundCancelledBy")
+  outboundsCreated   Outbound[] @relation("OutboundCreatedBy")
+  outboundsConfirmed Outbound[] @relation("OutboundConfirmedBy")
+  outboundsCancelled Outbound[] @relation("OutboundCancelledBy")
+}
+
+// 로그인 세션 (쿠키에는 원본 토큰, DB에는 SHA-256 해시만 저장)
+model Session {
+  id        String   @id // 토큰 해시
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ───────── 감사 로그 ─────────
+
+enum AuditCategory {
+  PRODUCT   // 상품
+  INBOUND   // 입고
+  OUTBOUND  // 출고
+  STOCK     // 재고 (안전재고 등)
+  WAREHOUSE // 창고·랙·보관위치
+  ORDER     // 발주·수주
+  DISPATCH  // 배차
+  VEHICLE   // 차량
+  USER      // 사용자·로그인
+}
+
+// 모든 등록·수정·처리 작업 기록. 추가만 가능 (DB 트리거로 UPDATE·DELETE·TRUNCATE 차단)
+model AuditLog {
+  id          String        @id @default(uuid())
+  category    AuditCategory
+  action      String        // 작업 코드 (modules/audit/codes.ts AUDIT_ACTION_LABELS)
+  targetId    String?       // 대상 레코드 id
+  targetLabel String?       // 대상 표시값 (상품명, 주문번호 등)
+  summary     String        // 작업 내용 (한국어 한 줄)
+  detail      Json?         // 상세 값 (입력값·변경 전후 등)
+  actorId     String?       // 작업자 id (FK 없음: 로그는 사용자와 무관하게 보존)
+  actor       String?       // 작업자 표시 "이름(아이디)" (로그인 전 기록·시스템 작업은 null)
+  createdAt   DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([category, createdAt])
 }

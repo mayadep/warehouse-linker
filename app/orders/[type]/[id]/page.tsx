@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { UUID_RE } from "@/lib/form";
@@ -29,6 +32,8 @@ const dtFmt = new Intl.DateTimeFormat("ko-KR", {
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ type: string; id: string }> }) {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="발주·수주" />;
   const { type: slug, id } = await params;
   if (!UUID_RE.test(id)) notFound();
   const o = await getOrderDetail(id);
@@ -52,7 +57,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
   }));
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <Link href={`/orders/${slug}`} className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground">
         <ChevronLeftIcon className="size-4" />
         {ORDER_TYPE_LABELS[type]} 목록
@@ -112,19 +117,19 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
-<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border">
+<table className="data-table">
         <thead>
-          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
+          <tr>
             <th>#</th>
             <th>코드</th>
             <th>품명</th>
-            <th>주문</th>
-            <th>{label}</th>
-            <th>남은 수량</th>
-            <th>단가</th>
-            <th>금액</th>
-            {type === "SALES" && <th>현재고</th>}
+            <th className="num">주문</th>
+            <th className="num">{label}</th>
+            <th className="num">남은 수량</th>
+            <th className="num">단가</th>
+            <th className="num">금액</th>
+            {type === "SALES" && <th className="num">현재고</th>}
             <th>{label} 이력</th>
           </tr>
         </thead>
@@ -135,16 +140,16 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
               ? l.inbounds.map((h) => ({ id: h.id, q: h.quantity, at: h.receivedAt }))
               : l.outbounds.map((h) => ({ id: h.id, q: h.quantity, at: h.shippedAt }));
             return (
-              <tr key={l.id} className="border-b align-top last:border-b-0">
+              <tr key={l.id}>
                 <td className="text-muted-foreground">{l.seq}</td>
                 <td className="font-mono text-xs text-muted-foreground">{l.product.sku}</td>
                 <td>{l.product.name}</td>
-                <td>{l.quantity.toLocaleString()}</td>
-                <td className={l.processedQty >= l.quantity ? "text-emerald-700" : ""}>{l.processedQty.toLocaleString()}</td>
-                <td className={remaining > 0 ? "font-medium text-amber-700" : "text-gray-400"}>{remaining.toLocaleString()}</td>
-                <td>{l.unitPrice == null ? "-" : l.unitPrice.toLocaleString()}</td>
-                <td>{l.unitPrice == null ? "-" : (l.unitPrice * l.quantity).toLocaleString()}</td>
-                {type === "SALES" && <td className={l.product.stock < remaining ? "text-red-600" : ""}>{l.product.stock.toLocaleString()}</td>}
+                <td className="num">{l.quantity.toLocaleString()}</td>
+                <td className={`num ${l.processedQty >= l.quantity ? "text-emerald-700" : ""}`}>{l.processedQty.toLocaleString()}</td>
+                <td className={`num ${remaining > 0 ? "font-medium text-amber-700" : "text-gray-400"}`}>{remaining.toLocaleString()}</td>
+                <td className="num">{l.unitPrice == null ? "-" : l.unitPrice.toLocaleString()}</td>
+                <td className="num">{l.unitPrice == null ? "-" : (l.unitPrice * l.quantity).toLocaleString()}</td>
+                {type === "SALES" && <td className={`num ${l.product.stock < remaining ? "text-red-600" : ""}`}>{l.product.stock.toLocaleString()}</td>}
                 <td className="text-xs text-muted-foreground">
                   {history.length === 0
                     ? "-"

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { UUID_RE } from "@/lib/form";
@@ -9,6 +12,8 @@ import RackTable, { type RackRow } from "./RackTable";
 
 export default async function WarehouseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="창고관리" />;
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
   const [wh, occupied] = await Promise.all([getWarehouseDetail(id), listOccupiedLocations(id)]);
@@ -30,7 +35,7 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
   const lastRackNumber = racks.reduce((m, r) => Math.max(m, r.number), 0);
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <Link href="/warehouses" className="text-sm text-gray-500 hover:underline">
         ‹ 창고 목록
       </Link>

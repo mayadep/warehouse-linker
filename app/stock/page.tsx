@@ -3,6 +3,9 @@ import { connection } from "next/server";
 import { listStockStatus, parseStockFilter, type StockFilter } from "@/modules/stock/queries";
 import { listWarehouseOptions } from "@/modules/warehouse/location";
 import StockTable, { type StockRow } from "./StockTable";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, SearchIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,10 +47,14 @@ export default async function StockPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
+  const user = await requirePageUser();
+  if (!can(user.role, "stock.view")) return <Forbidden title="재고현황" />;
+  const showPrice = can(user.role, "price.view");
+  const canEdit = can(user.role, "admin"); // 안전재고·보관위치 변경
   const filter = parseStockFilter(await searchParams);
   const [{ rows, summary, categories, pagination }, warehouses] = await Promise.all([
     listStockStatus(filter),
-    listWarehouseOptions(),
+    canEdit ? listWarehouseOptions() : Promise.resolve([]),
   ]);
   const { page, totalPages, matched, pageSize } = pagination;
 
@@ -60,11 +67,12 @@ export default async function StockPage({
     locationCode: r.locationCode,
     baseUnit: r.baseUnit,
     boxQty: r.boxQty,
-    price: r.price,
+    // 금액 권한이 없으면 내려주지 않음
+    price: showPrice ? r.price : null,
     stock: r.stock,
     safetyStock: r.safetyStock,
     status: r.status,
-    stockValue: r.stockValue,
+    stockValue: showPrice ? r.stockValue : null,
     lastInboundText: r.lastInboundAt ? dateFmt.format(r.lastInboundAt) : null,
     lastOutboundText: r.lastOutboundAt ? dateFmt.format(r.lastOutboundAt) : null,
   }));
@@ -73,11 +81,13 @@ export default async function StockPage({
     { label: "전체 품목", value: `${summary.total.toLocaleString()}개`, href: "/stock", tone: "text-foreground" },
     { label: "재고 없음", value: `${summary.out.toLocaleString()}개`, href: "/stock?status=out", tone: "text-red-600" },
     { label: "부족 (안전재고 이하)", value: `${summary.low.toLocaleString()}개`, href: "/stock?status=low", tone: "text-amber-600" },
-    { label: "재고금액 (판매가 기준)", value: `${summary.totalValue.toLocaleString()}원`, href: null, tone: "text-foreground" },
+    ...(showPrice
+      ? [{ label: "재고금액 (판매가 기준)", value: `${summary.totalValue.toLocaleString()}원`, href: null, tone: "text-foreground" }]
+      : []),
   ];
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <h2 className="mb-6 text-2xl font-semibold tracking-tight">재고현황</h2>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -138,7 +148,7 @@ export default async function StockPage({
             ` · ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, matched).toLocaleString()} 표시`}
         </span>
       </form>
-      <StockTable rows={tableRows} warehouses={warehouses} />
+      <StockTable rows={tableRows} warehouses={warehouses} showPrice={showPrice} canEdit={canEdit} />
 
       {totalPages > 1 && (
         <nav className="mt-5 flex flex-wrap items-center justify-center gap-1" aria-label="페이지">

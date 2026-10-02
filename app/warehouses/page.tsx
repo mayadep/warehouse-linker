@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { connection } from "next/server";
 import { countProductsWithoutLocation, listWarehouses, suggestWarehouseCodes } from "@/modules/warehouse/service";
 import { STORAGE_TYPES, STORAGE_TYPE_LABELS } from "@/modules/warehouse/codes";
@@ -8,6 +11,8 @@ import AssignLocationsButton from "./AssignLocationsButton";
 
 export default async function WarehousesPage() {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="창고관리" />;
   const [warehouses, suggestions, unassignedCount] = await Promise.all([
     listWarehouses(),
     suggestWarehouseCodes(),
@@ -18,7 +23,7 @@ export default async function WarehousesPage() {
   const totalLocations = warehouses.reduce((s, w) => s + w._count.locations, 0);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="mb-6 flex items-center justify-between gap-4">
         <h2 className="text-2xl font-semibold tracking-tight">창고관리</h2>
         <WarehouseCreateButton suggestions={suggestions} />

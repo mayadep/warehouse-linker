@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { toKstDate } from "@/lib/datetime";
@@ -25,6 +28,8 @@ const STATUSES = ["active", "all", "OPEN", "PARTIAL", "DONE", "CLOSED", "CANCELL
 
 export default async function OrdersPage({ params, searchParams }: { params: Promise<{ type: string }>; searchParams: Promise<SP> }) {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="발주·수주" />;
   const { type: slug } = await params;
   if (slug !== "purchase" && slug !== "sales") notFound();
   const sp = await searchParams;
@@ -44,7 +49,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
   const href = (p: number) => `/orders/${typeParam}?status=${status}${q ? `&q=${encodeURIComponent(q)}` : ""}${p > 1 ? `&page=${p}` : ""}`;
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">{ORDER_TYPE_LABELS[type]}</h2>
@@ -80,17 +85,17 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
           <b className="font-semibold text-foreground">{total.toLocaleString()}</b>건
         </span>
       </form>
-      <div className="overflow-x-auto rounded-lg border">
-<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border">
+<table className="data-table">
         <thead>
-          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
+          <tr>
             <th>번호</th>
             <th>등록일</th>
             <th>{ORDER_PARTNER_LABELS[type]}</th>
             <th>품목</th>
-            <th>주문 수량</th>
-            <th>{ORDER_PROCESS_LABELS[type]} 진행</th>
-            <th>금액</th>
+            <th className="num">주문 수량</th>
+            <th className="num">{ORDER_PROCESS_LABELS[type]} 진행</th>
+            <th className="num">금액</th>
             <th>{ORDER_DUE_LABELS[type]}</th>
             <th>상태</th>
           </tr>
@@ -98,7 +103,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={9} className="!py-10 text-muted-foreground">
+              <td colSpan={9} className="text-muted-foreground">
                 {ORDER_TYPE_LABELS[type]} 내역이 없습니다.
               </td>
             </tr>
@@ -109,7 +114,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
             const amount = o.lines.reduce((s, l) => s + l.quantity * (l.unitPrice ?? 0), 0);
             const st = o.status as OrderStatusCode;
             return (
-              <tr key={o.id} className="border-b transition-colors last:border-b-0 hover:bg-indigo-50">
+              <tr key={o.id} className="transition-colors hover:bg-indigo-50">
                 <td>
                   <Link href={`/orders/${typeParam}/${o.id}`} className="font-mono text-xs font-medium text-indigo-700 hover:underline">
                     {o.orderNo}
@@ -121,12 +126,12 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
                   {o.lines[0]?.product.name}
                   {o.lines.length > 1 && <span className="text-muted-foreground"> 외 {o.lines.length - 1}</span>}
                 </td>
-                <td>{qty.toLocaleString()}</td>
-                <td>
+                <td className="num">{qty.toLocaleString()}</td>
+                <td className="num whitespace-nowrap">
                   {done.toLocaleString()} / {qty.toLocaleString()}
                   <span className="ml-1 text-xs text-muted-foreground">({qty ? Math.round((done / qty) * 100) : 0}%)</span>
                 </td>
-                <td>{amount ? `${amount.toLocaleString()}원` : "-"}</td>
+                <td className="num">{amount ? `${amount.toLocaleString()}원` : "-"}</td>
                 <td className="text-muted-foreground">{o.dueDate ? toKstDate(o.dueDate) : "-"}</td>
                 <td>
                   <Badge variant={ORDER_STATUS_TONE[st]}>{ORDER_STATUS_LABELS[st]}</Badge>

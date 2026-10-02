@@ -88,15 +88,15 @@ export default function RackTable({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-lg border">
-<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border">
+<table className="data-table">
         <thead>
-          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
-            <th className="py-2">랙</th>
-            <th>단 수</th>
-            <th>단별 구획</th>
-            <th>구획 수</th>
-            <th>상품 배정</th>
+          <tr>
+            <th>랙</th>
+            <th className="num">단 수</th>
+            <th className="num">단별 구획</th>
+            <th className="num">구획 수</th>
+            <th className="num">상품 배정</th>
             <th>위치코드 범위</th>
             <th>배치도</th>
           </tr>
@@ -104,18 +104,18 @@ export default function RackTable({
         <tbody>
           {racks.length === 0 && (
             <tr>
-              <td colSpan={7} className="py-6 text-gray-400">
+              <td colSpan={7} className="text-gray-400">
                 랙이 없습니다. [+ 랙 추가]로 만드세요.
               </td>
             </tr>
           )}
           {racks.map((r) => (
-            <tr key={r.id} onClick={() => setOpenId(r.id)} className="cursor-pointer border-b hover:bg-indigo-50">
-              <td className="py-2 font-mono font-medium">{rackCode(r.number)}</td>
-              <td>{r.levels}</td>
-              <td>{r.binsPerLevel}</td>
-              <td>{r.locationCount.toLocaleString()}</td>
-              <td className={usedByRack.get(r.id) ? "text-indigo-700" : "text-gray-400"}>
+            <tr key={r.id} onClick={() => setOpenId(r.id)} className="cursor-pointer hover:bg-indigo-50">
+              <td className="font-mono font-medium">{rackCode(r.number)}</td>
+              <td className="num">{r.levels}</td>
+              <td className="num">{r.binsPerLevel}</td>
+              <td className="num">{r.locationCount.toLocaleString()}</td>
+              <td className={`num ${usedByRack.get(r.id) ? "text-indigo-700" : "text-gray-400"}`}>
                 {(usedByRack.get(r.id) ?? 0).toLocaleString()}
               </td>
               <td className="font-mono text-gray-600">

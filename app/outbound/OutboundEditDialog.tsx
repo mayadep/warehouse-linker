@@ -62,7 +62,7 @@ export default function OutboundEditDialog({
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4 p-6">
         <div className="flex items-start justify-between">
           <h3 id="outbound-edit-title" className="text-lg font-bold">
-            출고 수정
+            {row.status === "PENDING" ? "대기 출고 수정 (재고 미반영)" : "출고 수정"}
           </h3>
           <button
             type="button"
@@ -112,7 +112,7 @@ export default function OutboundEditDialog({
           </label>
         </div>
 
-        {delta !== 0 && (
+        {delta !== 0 && row.status === "CONFIRMED" && (
           <p className={`-mt-2 text-xs ${nextStock < 0 ? "text-red-600" : "text-gray-600"}`}>
             재고 {delta > 0 ? "+" : ""}
             {delta.toLocaleString()} : 현재고 {row.productStock.toLocaleString()} →{" "}

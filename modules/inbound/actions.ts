@@ -3,12 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import {
+  parseInboundConfirmForm,
   parseInboundForm,
   parseInboundUpdateForm,
+  parseInboundVoidForm,
   type InboundFieldErrors,
   type InboundUpdateFieldErrors,
 } from "./validation";
-import { createInbound, updateInbound, findSimilarInbound, InboundError } from "./service";
+import {
+  cancelInbound,
+  confirmInbound,
+  createInbound,
+  deletePendingInbound,
+  updateInbound,
+  findSimilarInbound,
+  InboundError,
+} from "./service";
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
@@ -30,7 +41,8 @@ export async function createInboundAction(
   _prev: InboundActionState,
   formData: FormData
 ): Promise<InboundActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 입고 권한 확인 (UI에만 의존하지 않음)
+  const actor = await authorize("inbound.create");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
 
   const parsed = parseInboundForm(formData);
   if (!parsed.ok) {
@@ -55,13 +67,16 @@ export async function createInboundAction(
   }
 
   try {
-    const result = await createInbound(parsed.data);
+    const result = await createInbound(parsed.data, actor);
     revalidatePath("/inbound");
     revalidatePath("/outbound"); // 출고 화면 현재고
     revalidatePath("/products/new");
     return {
       status: "success",
-      message: `${result.productName} ${parsed.data.quantity.toLocaleString()}개 입고 완료 (현재고 ${result.afterStock.toLocaleString()})`,
+      message:
+        result.afterStock === null
+          ? `${result.productName} ${parsed.data.quantity.toLocaleString()}개 입고 등록 — 관리자가 확정하면 재고에 반영됩니다.`
+          : `${result.productName} ${parsed.data.quantity.toLocaleString()}개 입고 완료 (현재고 ${result.afterStock.toLocaleString()})`,
       ts: Date.now(),
     };
   } catch (e) {
@@ -101,7 +116,7 @@ export async function updateInboundAction(
   _prev: InboundUpdateActionState,
   formData: FormData
 ): Promise<InboundUpdateActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 입고 수정 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("inbound.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
 
   const parsed = parseInboundUpdateForm(formData);
   if (!parsed.ok) {
@@ -127,4 +142,56 @@ export async function updateInboundAction(
     console.error("[inbound] update failed", e);
     return { status: "error", message: "입고 수정 중 오류가 발생했습니다. 다시 시도하세요.", ts: Date.now() };
   }
+}
+
+export type InboundReviewState = { status: "idle" | "success" | "error"; message: string; ts?: number };
+
+async function review(fn: () => Promise<string>): Promise<InboundReviewState> {
+  try {
+    const message = await fn();
+    revalidatePath("/inbound");
+    revalidatePath("/outbound"); // 출고 화면 현재고
+    revalidatePath("/products/new"); // 현재고 표시
+    revalidatePath("/orders", "layout"); // 발주 입고 수량
+    return { status: "success", message, ts: Date.now() };
+  } catch (e) {
+    if (e instanceof InboundError) return { status: "error", message: e.message, ts: Date.now() };
+    console.error("[inbound] review failed", e);
+    return { status: "error", message: "처리 중 오류가 발생했습니다. 다시 시도하세요.", ts: Date.now() };
+  }
+}
+
+/** 입고 확정 (관리자): 재고 반영 */
+export async function confirmInboundAction(_p: InboundReviewState, fd: FormData): Promise<InboundReviewState> {
+  const actor = await authorize("inbound.manage");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseInboundConfirmForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await confirmInbound(parsed.data, actor);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 입고 확정 (현재고 ${r.afterStock.toLocaleString()})`;
+  });
+}
+
+/** 확정 입고 취소 (관리자): 재고 차감 역이력 */
+export async function cancelInboundAction(_p: InboundReviewState, fd: FormData): Promise<InboundReviewState> {
+  const actor = await authorize("inbound.manage");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseInboundVoidForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await cancelInbound(parsed.data, actor);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 입고 취소 (현재고 ${r.afterStock.toLocaleString()})`;
+  });
+}
+
+/** 대기 입고 삭제 (관리자) */
+export async function deleteInboundAction(_p: InboundReviewState, fd: FormData): Promise<InboundReviewState> {
+  if (!(await authorize("inbound.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseInboundVoidForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await deletePendingInbound(parsed.data);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 대기 입고 삭제`;
+  });
 }

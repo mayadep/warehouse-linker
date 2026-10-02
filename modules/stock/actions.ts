@@ -5,6 +5,8 @@ import { INT_RE, UUID_RE, text } from "@/lib/form";
 import { prisma } from "@/lib/prisma";
 import { getStockLedger } from "./queries";
 import { getLocationHistory } from "@/modules/warehouse/location";
+import { recordAudit } from "@/modules/audit/service";
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 
 const MAX_SAFETY_STOCK = 1_000_000;
 
@@ -19,7 +21,7 @@ export async function updateSafetyStockAction(
   _prev: SafetyStockActionState,
   fd: FormData
 ): Promise<SafetyStockActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const productId = text(fd, "productId");
   const raw = text(fd, "safetyStock").replaceAll(",", "");
   if (!UUID_RE.test(productId)) return { status: "error", message: "잘못된 상품입니다.", ts: Date.now() };
@@ -28,8 +30,24 @@ export async function updateSafetyStockAction(
   if (safetyStock > MAX_SAFETY_STOCK)
     return { status: "error", message: `안전재고는 ${MAX_SAFETY_STOCK.toLocaleString()} 이하여야 합니다.`, ts: Date.now() };
 
-  const r = await prisma.product.updateMany({ where: { id: productId }, data: { safetyStock } });
-  if (r.count === 0) return { status: "error", message: "존재하지 않는 상품입니다.", ts: Date.now() };
+  const result = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ sku: string; name: string; safetyStock: number }[]>`
+      SELECT "sku", "name", "safetyStock" FROM "Product" WHERE "id" = ${productId} FOR UPDATE`;
+    const p = rows[0];
+    if (!p) return "notFound" as const;
+    if (p.safetyStock === safetyStock) return "same" as const;
+    await tx.product.update({ where: { id: productId }, data: { safetyStock } });
+    await recordAudit(tx, {
+      category: "STOCK",
+      action: "SAFETY_STOCK_UPDATE",
+      targetId: productId,
+      targetLabel: `[${p.sku}] ${p.name}`,
+      summary: `${p.name} 안전재고 ${p.safetyStock.toLocaleString()} → ${safetyStock.toLocaleString()}`,
+      detail: { before: { safetyStock: p.safetyStock }, after: { safetyStock } },
+    });
+    return "done" as const;
+  });
+  if (result === "notFound") return { status: "error", message: "존재하지 않는 상품입니다.", ts: Date.now() };
 
   revalidatePath("/stock");
   return { status: "success", message: `안전재고를 ${safetyStock.toLocaleString()}(으)로 저장했습니다.`, ts: Date.now() };
@@ -51,6 +69,8 @@ const TYPE_LABELS: Record<string, string> = {
   ADJUST: "재고조정",
   INBOUND_CORRECTION: "입고정정",
   OUTBOUND_CORRECTION: "출고정정",
+  INBOUND_CANCEL: "입고취소",
+  OUTBOUND_CANCEL: "출고취소",
 };
 
 export type LedgerEntry = {
@@ -81,6 +101,7 @@ export type LedgerResult =
 
 /** 재고원장 조회 (팝업에서 호출) */
 export async function getStockLedgerAction(productId: string): Promise<LedgerResult> {
+  if (!(await authorize("stock.view"))) return { ok: false, message: NO_PERMISSION_MESSAGE };
   if (typeof productId !== "string" || !UUID_RE.test(productId)) {
     return { ok: false, message: "잘못된 상품입니다." };
   }
@@ -112,7 +133,12 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
         beforeStock: m.beforeStock,
         afterStock: m.afterStock,
         partner: m.inbound?.supplier ?? m.outbound?.customer ?? null,
-        note: isCorrection ? reason : (m.inbound?.memo ?? m.outbound?.memo ?? null),
+        note:
+          m.type === "INBOUND_CANCEL" || m.type === "OUTBOUND_CANCEL"
+            ? (m.inbound?.cancelReason ?? m.outbound?.cancelReason ?? null)
+            : isCorrection
+              ? reason
+              : (m.inbound?.memo ?? m.outbound?.memo ?? null),
       };
     }),
   };

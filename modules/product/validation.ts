@@ -38,6 +38,34 @@ function text(fd: FormData, key: string): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 상품 등록 확정: 판매가 필수 */
+export function parseProductConfirmForm(
+  fd: FormData
+): { ok: true; data: { productId: string; price: number } } | { ok: false; message: string } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const raw = text(fd, "price").replaceAll(",", "");
+  if (!raw) return { ok: false, message: "판매가를 입력하세요." };
+  if (!INT_RE.test(raw)) return { ok: false, message: "판매가는 0 이상의 정수여야 합니다." };
+  const price = Number(raw);
+  if (price > PRODUCT_LIMITS.maxPrice) return { ok: false, message: "판매가가 너무 큽니다." };
+  return { ok: true, data: { productId, price } };
+}
+
+/** 상품 등록 반려: 사유 필수 */
+export function parseProductRejectForm(
+  fd: FormData
+): { ok: true; data: { productId: string; reason: string } } | { ok: false; message: string } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const reason = text(fd, "reason");
+  if (!reason) return { ok: false, message: "반려 사유를 입력하세요." };
+  if (reason.length > 200) return { ok: false, message: "반려 사유는 200자 이내로 입력하세요." };
+  return { ok: true, data: { productId, reason } };
+}
+
 export function parseProductForm(fd: FormData): ProductParseResult {
   const errors: ProductFieldErrors = {};
 

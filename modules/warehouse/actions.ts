@@ -1,5 +1,6 @@
 "use server";
 
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
 import {
   parseAddRacksForm,
@@ -25,7 +26,7 @@ export async function createWarehouseAction(
   _prev: WarehouseActionState,
   fd: FormData
 ): Promise<WarehouseActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseWarehouseForm(fd);
   if (!parsed.ok) return { status: "error", message: "입력값을 확인하세요.", errors: parsed.errors, ts: Date.now() };
   try {
@@ -53,7 +54,7 @@ export type AddRacksActionState = {
 };
 
 export async function addRacksAction(_prev: AddRacksActionState, fd: FormData): Promise<AddRacksActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseAddRacksForm(fd);
   if (!parsed.ok) return { status: "error", message: "입력값을 확인하세요.", errors: parsed.errors, ts: Date.now() };
   try {
@@ -77,7 +78,7 @@ export type AssignActionState = { status: "idle" | "success" | "error"; message:
 
 /** 위치가 없는 상품에 빈 칸을 랜덤 배정 */
 export async function assignLocationsAction(): Promise<AssignActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   try {
     const r = await assignRandomLocations();
     revalidatePath("/warehouses", "layout");
@@ -120,7 +121,7 @@ export async function changeProductLocationAction(
   _prev: LocationChangeActionState,
   fd: FormData
 ): Promise<LocationChangeActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseLocationChangeForm(fd);
   if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
   try {
@@ -157,6 +158,7 @@ export type RackPickerData =
 
 /** 위치 선택: 창고를 고르면 그 창고의 랙·배정 현황을 불러옴 */
 export async function getRacksForPickerAction(warehouseId: string): Promise<RackPickerData> {
+  if (!(await authorize("admin"))) return { ok: false, message: NO_PERMISSION_MESSAGE };
   if (typeof warehouseId !== "string" || !UUID_RE.test(warehouseId)) return { ok: false, message: "잘못된 창고입니다." };
   const r = await listRacksForPicker(warehouseId);
   return { ok: true, ...r };

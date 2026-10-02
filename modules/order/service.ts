@@ -2,7 +2,16 @@ import type { Prisma, TradeOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { nextDocNumber } from "@/lib/doc-number";
 import { changeStock, InsufficientStockError, isUniqueViolation } from "@/modules/stock/service";
-import { ORDER_PREFIX, type OrderTypeCode } from "./codes";
+import { toKstDate, toKstDateTimeLocal } from "@/lib/datetime";
+import { recordAudit } from "@/modules/audit/service";
+import {
+  ORDER_PREFIX,
+  ORDER_PROCESS_LABELS,
+  ORDER_STATUS_LABELS,
+  ORDER_TYPE_LABELS,
+  type OrderStatusCode,
+  type OrderTypeCode,
+} from "./codes";
 import { refreshOrderStatus } from "./lines";
 import type { OrderCreateInput, OrderProcessInput } from "./validation";
 
@@ -18,8 +27,12 @@ export async function createOrder(input: OrderCreateInput) {
       if (dup) throw new OrderError(`이미 처리된 요청입니다. (${dup.orderNo})`);
 
       const ids = input.lines.map((l) => l.productId);
-      const found = await tx.product.count({ where: { id: { in: ids } } });
-      if (found !== ids.length) throw new OrderError("존재하지 않는 상품이 포함되어 있습니다.");
+      const products = await tx.product.findMany({
+        where: { id: { in: ids }, status: "ACTIVE" },
+        select: { id: true, name: true },
+      });
+      if (products.length !== ids.length) throw new OrderError("존재하지 않거나 확정되지 않은 상품이 포함되어 있습니다.");
+      const nameOf = new Map(products.map((p) => [p.id, p.name]));
 
       const orderNo = await nextDocNumber(tx, ORDER_PREFIX[input.type], async (head) => {
         const last = await tx.tradeOrder.findFirst({
@@ -30,7 +43,7 @@ export async function createOrder(input: OrderCreateInput) {
         return last?.orderNo ?? null;
       });
 
-      return tx.tradeOrder.create({
+      const created = await tx.tradeOrder.create({
         data: {
           type: input.type,
           orderNo,
@@ -49,6 +62,24 @@ export async function createOrder(input: OrderCreateInput) {
         },
         select: { id: true, orderNo: true },
       });
+      const typeLabel = ORDER_TYPE_LABELS[input.type];
+      await recordAudit(tx, {
+        category: "ORDER",
+        action: "ORDER_CREATE",
+        targetId: created.id,
+        targetLabel: orderNo,
+        summary: `${typeLabel} 등록: ${orderNo} ${input.partner} (품목 ${input.lines.length}개)`,
+        detail: {
+          orderNo,
+          partner: input.partner,
+          dueDate: input.dueDate ? toKstDate(input.dueDate) : null,
+          lines: input.lines
+            .map((l) => `${nameOf.get(l.productId)} ${l.quantity.toLocaleString()}${l.unitPrice !== null ? ` @${l.unitPrice.toLocaleString()}` : ""}`)
+            .join(", "),
+          memo: input.memo,
+        },
+      });
+      return created;
     }, TX);
   } catch (e) {
     if (isUniqueViolation(e, "requestId")) throw new OrderError("이미 처리된 요청입니다.");
@@ -92,6 +123,7 @@ export async function processOrder(input: OrderProcessInput) {
       if (already) throw new OrderError("이미 처리된 요청입니다.");
 
       let totalQty = 0;
+      const done: string[] = [];
       for (const req of input.lines) {
         const line = order.lines.find((l) => l.id === req.lineId);
         if (!line) throw new OrderError("이 주문에 없는 품목이 포함되어 있습니다.");
@@ -146,10 +178,26 @@ export async function processOrder(input: OrderProcessInput) {
           data: { processedQty: { increment: req.quantity } },
         });
         totalQty += req.quantity;
+        done.push(`${line.product.name} ${req.quantity.toLocaleString()}`);
       }
 
       await tx.tradeOrder.update({ where: { id: order.id }, data: { version: { increment: 1 } } });
       const status = await refreshOrderStatus(tx, order.id);
+      const processLabel = ORDER_PROCESS_LABELS[order.type as OrderTypeCode];
+      await recordAudit(tx, {
+        category: "ORDER",
+        action: "ORDER_PROCESS",
+        targetId: order.id,
+        targetLabel: order.orderNo,
+        summary: `${order.orderNo} ${processLabel} 처리: 품목 ${input.lines.length}개, 수량 ${totalQty.toLocaleString()}`,
+        detail: {
+          partner: order.partner,
+          lines: done.join(", "),
+          [order.type === "PURCHASE" ? "receivedAt" : "shippedAt"]: toKstDateTimeLocal(input.at).replace("T", " "),
+          status: ORDER_STATUS_LABELS[status as OrderStatusCode] ?? status,
+          memo: input.memo,
+        },
+      });
       return { orderNo: order.orderNo, type: order.type as OrderTypeCode, lineCount: input.lines.length, totalQty, status };
     }, TX);
   } catch (e) {
@@ -177,6 +225,17 @@ export async function finishOrder(orderId: string, version: number, action: "clo
       status = "CLOSED";
     }
     await tx.tradeOrder.update({ where: { id: orderId }, data: { status, version: { increment: 1 } } });
+    await recordAudit(tx, {
+      category: "ORDER",
+      action: action === "cancel" ? "ORDER_CANCEL" : "ORDER_CLOSE",
+      targetId: orderId,
+      targetLabel: order.orderNo,
+      summary: `${order.orderNo} ${action === "cancel" ? "주문 취소" : "잔량 종결"}`,
+      detail: {
+        before: { status: ORDER_STATUS_LABELS[order.status as OrderStatusCode] },
+        after: { status: ORDER_STATUS_LABELS[status as OrderStatusCode] },
+      },
+    });
     return { orderNo: order.orderNo, status };
   });
 }
@@ -222,8 +281,16 @@ export async function getOrderDetail(id: string) {
         orderBy: { seq: "asc" },
         include: {
           product: { select: { id: true, sku: true, name: true, baseUnit: true, stock: true } },
-          inbounds: { select: { id: true, quantity: true, receivedAt: true }, orderBy: { receivedAt: "asc" } },
-          outbounds: { select: { id: true, quantity: true, shippedAt: true }, orderBy: { shippedAt: "asc" } },
+          inbounds: {
+            where: { status: { not: "CANCELLED" } }, // 취소된 입고는 처리 수량에서 빠짐
+            select: { id: true, quantity: true, receivedAt: true },
+            orderBy: { receivedAt: "asc" },
+          },
+          outbounds: {
+            where: { status: { not: "CANCELLED" } }, // 취소된 출고는 처리 수량에서 빠짐
+            select: { id: true, quantity: true, shippedAt: true },
+            orderBy: { shippedAt: "asc" },
+          },
         },
       },
     },
@@ -232,6 +299,7 @@ export async function getOrderDetail(id: string) {
 
 export async function listProductsForOrder() {
   return prisma.product.findMany({
+    where: { status: "ACTIVE" },
     select: { id: true, sku: true, name: true, category: true, price: true, stock: true, baseUnit: true },
     orderBy: [{ category: "asc" }, { sku: "asc" }],
   });

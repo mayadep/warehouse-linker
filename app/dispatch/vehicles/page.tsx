@@ -1,13 +1,18 @@
 import Link from "next/link";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import { connection } from "next/server";
 import { listVehicles } from "@/modules/dispatch/service";
 import VehicleManager from "./VehicleManager";
 
 export default async function VehiclesPage() {
   await connection();
+  const user = await requirePageUser();
+  if (!can(user.role, "admin")) return <Forbidden title="차량 관리" />;
   const vehicles = await listVehicles();
   return (
-    <div className="max-w-5xl">
+    <div>
       <Link href="/dispatch" className="text-sm text-gray-500 hover:underline">‹ 배차관리</Link>
       <h2 className="mt-2 mb-4 text-2xl font-semibold tracking-tight">차량 관리</h2>
       <VehicleManager

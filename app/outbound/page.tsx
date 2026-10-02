@@ -1,4 +1,7 @@
 import { connection } from "next/server";
+import Forbidden from "@/components/Forbidden";
+import { requirePageUser } from "@/modules/user/auth";
+import { can } from "@/modules/user/codes";
 import {
   listProductsForOutbound,
   listRecentCustomers,
@@ -34,22 +37,29 @@ function formatValue(field: string, v: unknown): string {
 }
 
 /** 수정 기록 JSON → "수량 10 → 12, 출고처 - → A" */
-function describeChanges(before: unknown, after: unknown): string {
+function describeChanges(before: unknown, after: unknown, showPrice: boolean): string {
   const b = (before ?? {}) as Record<string, unknown>;
   const a = (after ?? {}) as Record<string, unknown>;
   return Object.keys(a)
+    .filter((k) => showPrice || k !== "unitPrice")
     .map((k) => `${FIELD_LABELS[k] ?? k} ${formatValue(k, b[k])} → ${formatValue(k, a[k])}`)
     .join(", ");
 }
 
 export default async function OutboundPage() {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
+  const user = await requirePageUser();
+  if (!can(user.role, "outbound.create")) return <Forbidden title="출고" />;
+  const showPrice = can(user.role, "price.view");
+  const canManage = can(user.role, "outbound.manage");
 
-  const [products, customers, recent] = await Promise.all([
+  const [productRows, customers, recent] = await Promise.all([
     listProductsForOutbound(),
     listRecentCustomers(),
     listRecentOutbounds(20),
   ]);
+  // 직원에게는 판매가(출고단가 기본값)를 내려주지 않음
+  const products = productRows.map((p) => ({ ...p, price: showPrice ? p.price : null }));
 
   const rows: OutboundRow[] = recent.map((r) => ({
     id: r.id,
@@ -59,7 +69,12 @@ export default async function OutboundPage() {
     baseUnit: r.product.baseUnit,
     productStock: r.product.stock,
     quantity: r.quantity,
-    unitPrice: r.unitPrice,
+    unitPrice: showPrice ? r.unitPrice : null, // 직원에게는 단가를 내려주지 않음
+    productPrice: showPrice ? r.product.price : null,
+    status: r.status,
+    createdByName: r.createdBy?.name ?? null,
+    cancelReason: r.cancelReason,
+    dispatchNo: r.dispatchItem?.dispatch.dispatchNo ?? null,
     customer: r.customer,
     memo: r.memo,
     shippedAtText: dateFmt.format(r.shippedAt),
@@ -69,12 +84,12 @@ export default async function OutboundPage() {
     revisions: r.revisions.map((rv) => ({
       createdAtText: dateFmt.format(rv.createdAt),
       reason: rv.reason,
-      changesText: describeChanges(rv.before, rv.after),
+      changesText: describeChanges(rv.before, rv.after, showPrice),
     })),
   }));
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <h2 className="mb-6 text-2xl font-semibold tracking-tight">출고</h2>
 
       {products.length === 0 ? (
@@ -82,10 +97,15 @@ export default async function OutboundPage() {
           DB에 등록된 상품이 없습니다. 상품등록 화면에서 상품을 먼저 등록하세요.
         </p>
       ) : (
-        <OutboundForm products={products} customers={customers} />
+        <OutboundForm products={products} customers={customers} showPrice={showPrice} />
+      )}
+      {!canManage && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          등록한 출고는 관리자가 확정하면 재고에서 차감됩니다.
+        </p>
       )}
 
-      <OutboundTable rows={rows} />
+      <OutboundTable rows={rows} canManage={canManage} showPrice={showPrice} />
     </div>
   );
 }

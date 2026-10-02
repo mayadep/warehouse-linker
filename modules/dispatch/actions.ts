@@ -1,5 +1,6 @@
 "use server";
 
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
 import { UUID_RE, text } from "@/lib/form";
 import { DISPATCH_STATUS_LABELS } from "./codes";
@@ -26,7 +27,7 @@ const ok = (message: string): DispatchActionState => ({ status: "success", messa
 const fail = (message: string): DispatchActionState => ({ status: "error", message, ts: Date.now() });
 
 async function run(fn: () => Promise<string>): Promise<DispatchActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("admin"))) return fail(NO_PERMISSION_MESSAGE); // 배차·차량은 관리자만
   try {
     const msg = await fn();
     revalidatePath("/dispatch", "layout");

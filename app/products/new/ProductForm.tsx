@@ -19,7 +19,7 @@ const initialState: ProductActionState = { status: "idle", message: "" };
 const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
-export default function ProductForm({ categories }: { categories: string[] }) {
+export default function ProductForm({ categories, showPrice }: { categories: string[]; showPrice: boolean }) {
   const [state, formAction, pending] = useActionState(createProductAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const [baseUnit, setBaseUnit] = useState<ProductUnitCode>("EA");
@@ -116,11 +116,14 @@ export default function ProductForm({ categories }: { categories: string[] }) {
           {err.boxQty && <span className={errText}>{err.boxQty}</span>}
         </label>
 
-        <label className="flex-1 text-sm">
-          판매가 (원)
-          <Input name="price" className={input} type="number" min={0} step={1} placeholder="0" />
-          {err.price && <span className={errText}>{err.price}</span>}
-        </label>
+        {/* 직원은 판매가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
+        {showPrice && (
+          <label className="flex-1 text-sm">
+            판매가 (원)
+            <Input name="price" className={input} type="number" min={0} step={1} placeholder="0" />
+            {err.price && <span className={errText}>{err.price}</span>}
+          </label>
+        )}
       </div>
 
       <label className="block text-sm">

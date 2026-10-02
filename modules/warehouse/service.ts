@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { isUniqueViolation } from "@/modules/stock/service";
 import { createRacksWithLocations } from "./builder";
-import { STORAGE_TYPES, WAREHOUSE_LIMITS, nextWarehouseCode, type StorageTypeCode } from "./codes";
+import { STORAGE_TYPES, STORAGE_TYPE_LABELS, WAREHOUSE_LIMITS, nextWarehouseCode, type StorageTypeCode } from "./codes";
+import { recordAudit } from "@/modules/audit/service";
 import type { AddRacksInput, WarehouseInput } from "./validation";
 
 export class WarehouseError extends Error {}
@@ -27,6 +28,23 @@ export async function createWarehouse(input: WarehouseInput) {
         count: input.rackCount,
         levels: input.levels,
         binsPerLevel: input.binsPerLevel,
+      });
+      await recordAudit(tx, {
+        category: "WAREHOUSE",
+        action: "WAREHOUSE_CREATE",
+        targetId: wh.id,
+        targetLabel: `${wh.code} ${wh.name}`,
+        summary: `창고 추가: ${wh.code} ${wh.name} (랙 ${r.rackCount}개, 구획 ${r.locationCount.toLocaleString()}칸)`,
+        detail: {
+          code: wh.code,
+          name: wh.name,
+          storageType: STORAGE_TYPE_LABELS[wh.storageType],
+          racks: r.rackCount,
+          levels: input.levels,
+          binsPerLevel: input.binsPerLevel,
+          locations: r.locationCount,
+          memo: wh.memo,
+        },
       });
       return { warehouse: wh, ...r };
     }, TX_OPTIONS);
@@ -73,6 +91,19 @@ export async function addRacks(input: AddRacksInput) {
       levels: input.levels,
       binsPerLevel: input.binsPerLevel,
     });
+    await recordAudit(tx, {
+      category: "WAREHOUSE",
+      action: "RACK_ADD",
+      targetId: wh.id,
+      targetLabel: wh.code,
+      summary: `${wh.code} 랙 ${r.rackCount}개 추가 (R${String(startNumber).padStart(2, "0")}~R${String(lastNumber).padStart(2, "0")}, 구획 ${r.locationCount.toLocaleString()}칸)`,
+      detail: {
+        racks: `${startNumber}~${lastNumber}번`,
+        levels: input.levels,
+        binsPerLevel: input.binsPerLevel,
+        locations: r.locationCount,
+      },
+    });
     return { warehouseCode: wh.code, startNumber, lastNumber, ...r };
   }, TX_OPTIONS);
 }
@@ -115,7 +146,7 @@ export async function suggestWarehouseCodes(): Promise<Record<StorageTypeCode, s
 
 /** 보관위치가 없는 상품 수 */
 export async function countProductsWithoutLocation() {
-  return prisma.product.count({ where: { locationId: null } });
+  return prisma.product.count({ where: { locationId: null, status: "ACTIVE" } });
 }
 
 /** 창고 안에서 상품이 배정된 칸 (배치도 표시용) */

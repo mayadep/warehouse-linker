@@ -6,6 +6,23 @@ warehouse-linker
 상세 설계와 업무 규칙은 @docs/DESIGN.md를 따른다.
 업무 규칙이나 데이터 모델을 변경하면 @docs/DESIGN.md도 갱신한다.
 
+## Design System
+
+UI/UX를 작업할 때는 반드시 `DESIGN_SYSTEM.md`의 디자인 규칙을 따른다.
+
+새로운 화면이나 컴포넌트를 만들 때
+- 색상
+- typography
+- spacing
+- border radius
+- table
+- button
+- card
+- modal
+- layout
+등의 디자인을 임의로 변경하지 않는다.
+
+기존 디자인 시스템과 충돌하는 요구사항이 있으면 먼저 사용자에게 확인한다.
 
 
 핵심 규칙
@@ -34,7 +51,7 @@ warehouse-linker
 
 보안 · 데이터
 
-현재 인증 없음. 각 Server Action의 TODO: 권한 확인 위치를 유지한다.
+로그인·역할(직원/관리자) 있음. 모든 Server Action은 시작 부분에서 authorize(권한)로, 페이지는 requirePageUser() + can()으로 확인한다. 권한표는 modules/user/codes.ts.
 
 권한 검사를 UI에만 두지 않는다.
 

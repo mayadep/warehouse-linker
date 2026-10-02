@@ -1,14 +1,20 @@
 "use server";
 
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
 import {
+  parseOutboundConfirmForm,
   parseOutboundForm,
   parseOutboundUpdateForm,
+  parseOutboundVoidForm,
   type OutboundFieldErrors,
   type OutboundUpdateFieldErrors,
 } from "./validation";
 import {
+  cancelOutbound,
+  confirmOutbound,
   createOutbound,
+  deletePendingOutbound,
   updateOutbound,
   findSimilarOutbound,
   OutboundError,
@@ -41,7 +47,8 @@ export async function createOutboundAction(
   _prev: OutboundActionState,
   formData: FormData
 ): Promise<OutboundActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 출고 권한 확인 (UI에만 의존하지 않음)
+  const actor = await authorize("outbound.create");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
 
   const parsed = parseOutboundForm(formData);
   if (!parsed.ok) {
@@ -60,11 +67,14 @@ export async function createOutboundAction(
   }
 
   try {
-    const r = await createOutbound(parsed.data);
+    const r = await createOutbound(parsed.data, actor);
     revalidateStockPages();
     return {
       status: "success",
-      message: `${r.productName} ${parsed.data.quantity.toLocaleString()}개 출고 완료 (현재고 ${r.afterStock.toLocaleString()})`,
+      message:
+        r.afterStock === null
+          ? `${r.productName} ${parsed.data.quantity.toLocaleString()}개 출고 등록 — 관리자가 확정하면 재고에서 차감됩니다.`
+          : `${r.productName} ${parsed.data.quantity.toLocaleString()}개 출고 완료 (현재고 ${r.afterStock.toLocaleString()})`,
       ts: Date.now(),
     };
   } catch (e) {
@@ -95,7 +105,7 @@ export async function updateOutboundAction(
   _prev: OutboundUpdateActionState,
   formData: FormData
 ): Promise<OutboundUpdateActionState> {
-  // TODO: 인증/권한 체계 도입 시 여기서 출고 수정 권한 확인 (UI에만 의존하지 않음)
+  if (!(await authorize("outbound.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
 
   const parsed = parseOutboundUpdateForm(formData);
   if (!parsed.ok) {
@@ -119,4 +129,53 @@ export async function updateOutboundAction(
     console.error("[outbound] update failed", e);
     return { status: "error", message: "출고 수정 중 오류가 발생했습니다. 다시 시도하세요.", ts: Date.now() };
   }
+}
+
+export type OutboundReviewState = { status: "idle" | "success" | "error"; message: string; ts?: number };
+
+async function review(fn: () => Promise<string>): Promise<OutboundReviewState> {
+  try {
+    const message = await fn();
+    revalidateStockPages();
+    return { status: "success", message, ts: Date.now() };
+  } catch (e) {
+    if (e instanceof OutboundError) return { status: "error", message: e.message, ts: Date.now() };
+    console.error("[outbound] review failed", e);
+    return { status: "error", message: "처리 중 오류가 발생했습니다. 다시 시도하세요.", ts: Date.now() };
+  }
+}
+
+/** 출고 확정 (관리자): 재고 차감 */
+export async function confirmOutboundAction(_p: OutboundReviewState, fd: FormData): Promise<OutboundReviewState> {
+  const actor = await authorize("outbound.manage");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseOutboundConfirmForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await confirmOutbound(parsed.data, actor);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 출고 확정 (현재고 ${r.afterStock.toLocaleString()})`;
+  });
+}
+
+/** 확정 출고 취소 (관리자): 재고 복원 역이력 */
+export async function cancelOutboundAction(_p: OutboundReviewState, fd: FormData): Promise<OutboundReviewState> {
+  const actor = await authorize("outbound.manage");
+  if (!actor) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseOutboundVoidForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await cancelOutbound(parsed.data, actor);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 출고 취소 (현재고 ${r.afterStock.toLocaleString()})`;
+  });
+}
+
+/** 대기 출고 삭제 (관리자) */
+export async function deleteOutboundAction(_p: OutboundReviewState, fd: FormData): Promise<OutboundReviewState> {
+  if (!(await authorize("outbound.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseOutboundVoidForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const r = await deletePendingOutbound(parsed.data);
+    return `${r.productName} ${r.quantity.toLocaleString()}개 대기 출고 삭제`;
+  });
 }

@@ -178,7 +178,7 @@ export default function LocationEditor({
             name="mode"
             value="set-confirmed"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-500 disabled:bg-gray-400"
+            className="mt-2 rounded-[6px] bg-amber-600 px-3 py-1 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             확인하고 변경
           </button>

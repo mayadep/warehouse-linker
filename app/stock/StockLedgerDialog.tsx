@@ -24,10 +24,13 @@ const TYPE_STYLE: Record<string, string> = {
 export default function StockLedgerDialog({
   row,
   warehouses,
+  canEdit,
   onClose,
 }: {
   row: StockRow;
   warehouses: WarehouseOption[];
+  /** 안전재고·보관위치 변경 (관리자) */
+  canEdit: boolean;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -89,6 +92,8 @@ export default function StockLedgerDialog({
           </button>
         </div>
 
+        {canEdit ? (
+        <>
         <form onSubmit={onSubmit} noValidate className="flex flex-wrap items-center gap-2 rounded bg-gray-50 p-3 text-sm">
           <input type="hidden" name="productId" value={row.id} />
           <label className="flex items-center gap-2">
@@ -123,6 +128,13 @@ export default function StockLedgerDialog({
           warehouses={warehouses}
           onChanged={onLocationChanged}
         />
+        </>
+        ) : (
+          <p className="rounded bg-gray-50 p-3 text-sm text-gray-600">
+            안전재고 {row.safetyStock.toLocaleString()} {row.baseUnit} · 보관위치{" "}
+            <span className="font-mono">{row.locationCode ?? "없음"}</span>
+          </p>
+        )}
 
         {ledger?.ok && ledger.locationHistory.length > 0 && (
           <div className="text-xs text-gray-600">
@@ -153,13 +165,13 @@ export default function StockLedgerDialog({
                 재고 이력 {ledger.total.toLocaleString()}건
                 {ledger.total > ledger.entries.length && ` 중 최근 ${ledger.entries.length}건`}
               </p>
-              <table className="w-full text-center text-sm">
-                <thead className="sticky top-0 bg-background">
-                  <tr className="border-b">
-                    <th className="py-2">처리일시</th>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>처리일시</th>
                     <th>구분</th>
-                    <th>수량</th>
-                    <th>재고 (전 → 후)</th>
+                    <th className="num">수량</th>
+                    <th className="num">재고 (전 → 후)</th>
                     <th>입출고일시</th>
                     <th>거래처</th>
                     <th>비고 / 수정사유</th>
@@ -168,20 +180,20 @@ export default function StockLedgerDialog({
                 <tbody>
                   {ledger.entries.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-6 text-gray-400">
+                      <td colSpan={7} className="text-gray-400">
                         재고 이력이 없습니다.
                       </td>
                     </tr>
                   )}
                   {ledger.entries.map((e) => (
-                    <tr key={e.id} className="border-b">
-                      <td className="whitespace-nowrap py-1.5">{e.createdAtText}</td>
+                    <tr key={e.id}>
+                      <td className="whitespace-nowrap">{e.createdAtText}</td>
                       <td className={TYPE_STYLE[e.type] ?? ""}>{e.typeLabel}</td>
-                      <td className={e.quantity > 0 ? "text-indigo-700" : "text-red-700"}>
+                      <td className={`num ${e.quantity > 0 ? "text-indigo-700" : "text-red-700"}`}>
                         {e.quantity > 0 ? "+" : ""}
                         {e.quantity.toLocaleString()}
                       </td>
-                      <td className="whitespace-nowrap text-gray-600">
+                      <td className="num whitespace-nowrap text-gray-600">
                         {e.beforeStock.toLocaleString()} → {e.afterStock.toLocaleString()}
                       </td>
                       <td className="whitespace-nowrap text-gray-500">{e.tradeAtText ?? "-"}</td>

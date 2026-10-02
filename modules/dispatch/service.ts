@@ -6,6 +6,8 @@ import { storageTypeForCategory } from "@/modules/warehouse/assign";
 import { STORAGE_TYPE_LABELS } from "@/modules/warehouse/codes";
 import { canCarry, DISPATCH_CANCELLABLE, DISPATCH_LIMITS, DISPATCH_NEXT, DISPATCH_STATUS_LABELS, type DispatchStatusCode } from "./codes";
 import type { DispatchCreateInput, DispatchRef, VehicleInput } from "./validation";
+import { toKstDate } from "@/lib/datetime";
+import { recordAudit } from "@/modules/audit/service";
 
 export class DispatchError extends Error {}
 
@@ -13,7 +15,24 @@ export class DispatchError extends Error {}
 
 export async function createVehicle(input: VehicleInput) {
   try {
-    return await prisma.vehicle.create({ data: input });
+    return await prisma.$transaction(async (tx) => {
+      const v = await tx.vehicle.create({ data: input });
+      await recordAudit(tx, {
+        category: "VEHICLE",
+        action: "VEHICLE_CREATE",
+        targetId: v.id,
+        targetLabel: v.plateNo,
+        summary: `차량 등록: ${v.plateNo} (${STORAGE_TYPE_LABELS[v.storageType]}, ${v.driverName})`,
+        detail: {
+          plateNo: v.plateNo,
+          storageType: STORAGE_TYPE_LABELS[v.storageType],
+          driverName: v.driverName,
+          driverPhone: v.driverPhone,
+          memo: v.memo,
+        },
+      });
+      return v;
+    });
   } catch (e) {
     if (isUniqueViolation(e, "plateNo")) throw new DispatchError(`이미 등록된 차량번호입니다: ${input.plateNo}`);
     throw e;
@@ -32,6 +51,13 @@ export async function setVehicleActive(vehicleId: string, active: boolean) {
       if (busy > 0) throw new DispatchError(`${v.plateNo}: 진행 중인 배차 ${busy}건이 있어 운행 중지할 수 없습니다.`);
     }
     await tx.vehicle.update({ where: { id: vehicleId }, data: { isActive: active } });
+    await recordAudit(tx, {
+      category: "VEHICLE",
+      action: active ? "VEHICLE_ACTIVE" : "VEHICLE_INACTIVE",
+      targetId: vehicleId,
+      targetLabel: v.plateNo,
+      summary: `${v.plateNo} ${active ? "운행 재개" : "운행 중지"}`,
+    });
     return v.plateNo;
   });
 }
@@ -56,11 +82,16 @@ async function checkOutbounds(
     select: {
       id: true,
       customer: true,
+      status: true,
       product: { select: { name: true, category: true } },
       dispatchItem: { select: { dispatch: { select: { dispatchNo: true } } } },
     },
   });
   if (obs.length !== outboundIds.length) throw new DispatchError("존재하지 않는 출고 건이 포함되어 있습니다.");
+  const notConfirmed = obs.filter((o) => o.status !== "CONFIRMED");
+  if (notConfirmed.length > 0) {
+    throw new DispatchError(`확정되지 않았거나 취소된 출고는 배차할 수 없습니다: ${notConfirmed.map((o) => o.product.name).join(", ")}`);
+  }
   const taken = obs.filter((o) => o.dispatchItem);
   if (taken.length > 0) {
     throw new DispatchError(
@@ -75,6 +106,17 @@ async function checkOutbounds(
         .join(", ")}`
     );
   }
+}
+
+/** 감사 로그용 출고 요약: "상품명 수량(출고처), …" */
+async function outboundSummary(tx: Prisma.TransactionClient, outboundIds: string[]) {
+  const obs = await tx.outbound.findMany({
+    where: { id: { in: outboundIds } },
+    select: { quantity: true, customer: true, product: { select: { name: true } } },
+  });
+  return obs
+    .map((o) => `${o.product.name} ${o.quantity.toLocaleString()}${o.customer ? `(${o.customer})` : ""}`)
+    .join(", ");
 }
 
 /** 배차 등록 (차량 + 배송일 + 출고 건들) */
@@ -99,7 +141,7 @@ export async function createDispatch(input: DispatchCreateInput) {
         return last?.dispatchNo ?? null;
       });
 
-      return tx.dispatch.create({
+      const created = await tx.dispatch.create({
         data: {
           dispatchNo,
           deliveryDate: input.deliveryDate,
@@ -110,6 +152,20 @@ export async function createDispatch(input: DispatchCreateInput) {
         },
         select: { id: true, dispatchNo: true },
       });
+      await recordAudit(tx, {
+        category: "DISPATCH",
+        action: "DISPATCH_CREATE",
+        targetId: created.id,
+        targetLabel: dispatchNo,
+        summary: `배차 등록: ${dispatchNo} ${vehicle.plateNo} (${toKstDate(input.deliveryDate)}, 출고 ${input.outboundIds.length}건)`,
+        detail: {
+          deliveryDate: toKstDate(input.deliveryDate),
+          vehicle: `${vehicle.plateNo} (${vehicle.driverName})`,
+          outbounds: await outboundSummary(tx, input.outboundIds),
+          memo: input.memo,
+        },
+      });
+      return created;
     }, TX);
   } catch (e) {
     if (isUniqueViolation(e, "outboundId")) throw new DispatchError("다른 배차에 먼저 들어간 출고 건이 있습니다. 새로고침 후 다시 시도하세요.");
@@ -142,6 +198,14 @@ export async function addDispatchItems(input: DispatchRef & { outboundIds: strin
         data: input.outboundIds.map((outboundId, i) => ({ dispatchId: d.id, outboundId, seq: start + i + 1 })),
       });
       await tx.dispatch.update({ where: { id: d.id }, data: { version: { increment: 1 } } });
+      await recordAudit(tx, {
+        category: "DISPATCH",
+        action: "DISPATCH_ITEM_ADD",
+        targetId: d.id,
+        targetLabel: d.dispatchNo,
+        summary: `${d.dispatchNo}에 출고 ${input.outboundIds.length}건 추가`,
+        detail: { outbounds: await outboundSummary(tx, input.outboundIds) },
+      });
       return { dispatchNo: d.dispatchNo, added: input.outboundIds.length };
     }, TX);
   } catch (e) {
@@ -157,12 +221,20 @@ export async function removeDispatchItem(input: DispatchRef & { itemId: string }
     if (d.status !== "PLANNED") throw new DispatchError("상차 전(배차 단계)에만 품목을 뺄 수 있습니다.");
     if (!d.items.some((i) => i.id === input.itemId)) throw new DispatchError("이 배차에 없는 품목입니다.");
     if (d.items.length === 1) throw new DispatchError("마지막 품목은 뺄 수 없습니다. 배차를 취소하세요.");
-    await tx.dispatchItem.delete({ where: { id: input.itemId } });
+    const removed = await tx.dispatchItem.delete({ where: { id: input.itemId }, select: { outboundId: true } });
     const rest = d.items.filter((i) => i.id !== input.itemId);
     for (let i = 0; i < rest.length; i++) {
       if (rest[i].seq !== i + 1) await tx.dispatchItem.update({ where: { id: rest[i].id }, data: { seq: i + 1 } });
     }
     await tx.dispatch.update({ where: { id: d.id }, data: { version: { increment: 1 } } });
+    await recordAudit(tx, {
+      category: "DISPATCH",
+      action: "DISPATCH_ITEM_REMOVE",
+      targetId: d.id,
+      targetLabel: d.dispatchNo,
+      summary: `${d.dispatchNo}에서 출고 1건 빼기`,
+      detail: { outbounds: await outboundSummary(tx, [removed.outboundId]) },
+    });
     return { dispatchNo: d.dispatchNo };
   });
 }
@@ -190,6 +262,19 @@ export async function changeDispatchStatus(input: DispatchRef & { to: DispatchSt
       if (input.to === "DELIVERED") data.deliveredAt = new Date();
     }
     await tx.dispatch.update({ where: { id: d.id }, data });
+    await recordAudit(tx, {
+      category: "DISPATCH",
+      action: "DISPATCH_STATUS",
+      targetId: d.id,
+      targetLabel: d.dispatchNo,
+      summary: `${d.dispatchNo} ${DISPATCH_STATUS_LABELS[from]} → ${DISPATCH_STATUS_LABELS[input.to]}${released ? ` (출고 ${released}건 배차 해제)` : ""}`,
+      detail: {
+        before: { status: DISPATCH_STATUS_LABELS[from] },
+        after: { status: DISPATCH_STATUS_LABELS[input.to] },
+        vehicle: d.vehicle.plateNo,
+        ...(released ? { released: `${released}건` } : {}),
+      },
+    });
     return { dispatchNo: d.dispatchNo, to: input.to, released };
   });
 }
@@ -220,7 +305,7 @@ export async function listDispatchesByDate(deliveryDate: Date) {
 export async function listUnassignedOutbounds(now = new Date()) {
   const since = new Date(now.getTime() - DISPATCH_LIMITS.unassignedDays * 24 * 60 * 60 * 1000);
   return prisma.outbound.findMany({
-    where: { dispatchItem: null, shippedAt: { gte: since } },
+    where: { dispatchItem: null, status: "CONFIRMED", shippedAt: { gte: since } }, // 확정 출고만 배차
     orderBy: [{ shippedAt: "desc" }],
     select: outboundView,
     take: 300,

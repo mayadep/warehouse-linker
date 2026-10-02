@@ -59,12 +59,12 @@ function ProcessForm({
       <form onSubmit={submit} noValidate className="flex flex-col gap-3 text-sm">
         <input type="hidden" name="orderId" value={orderId} />
         <input type="hidden" name="version" value={version} />
-        <table className="w-full text-center">
+        <table className="w-full text-center text-sm tabular-nums">
           <thead>
             <tr className="border-b text-xs text-gray-500">
               <th className="py-1">품목</th>
-              <th>남은 수량</th>
-              {type === "SALES" && <th>현재고</th>}
+              <th className="text-right">남은 수량</th>
+              {type === "SALES" && <th className="text-right">현재고</th>}
               <th className="w-32">이번 {label}</th>
             </tr>
           </thead>
@@ -77,8 +77,8 @@ function ProcessForm({
                   <td className="py-1.5 text-left">
                     <span className="font-mono text-xs text-gray-500">{l.sku}</span> {l.name}
                   </td>
-                  <td>{l.remaining.toLocaleString()}</td>
-                  {type === "SALES" && <td className={l.stock < l.remaining ? "text-amber-700" : ""}>{l.stock.toLocaleString()}</td>}
+                  <td className="text-right">{l.remaining.toLocaleString()}</td>
+                  {type === "SALES" && <td className={`text-right ${l.stock < l.remaining ? "text-amber-700" : ""}`}>{l.stock.toLocaleString()}</td>}
                   <td>
                     <Input
                       type="number"
@@ -181,7 +181,7 @@ export default function OrderActions({
           <input type="hidden" name="version" value={version} />
           <input type="hidden" name="action" value={confirm} />
           {confirm === "close" ? "남은 수량을 더 처리하지 않고 종결합니다." : "이 주문을 취소합니다."}
-          <button disabled={fPending} className="rounded bg-amber-600 px-3 py-1 text-white hover:bg-amber-700">
+          <button disabled={fPending} className="rounded-[6px] bg-amber-600 px-3 py-1 text-white hover:bg-amber-700">
             확인
           </button>
           <Button variant="outline" size="sm" type="button" onClick={() => setConfirm(null)}>

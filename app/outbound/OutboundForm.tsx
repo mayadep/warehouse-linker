@@ -15,7 +15,7 @@ export type OutboundProductOption = {
   name: string;
   category: string;
   stock: number;
-  price: number;
+  price: number | null; // 금액 권한이 없으면 null
   baseUnit: string;
   location: { code: string } | null;
 };
@@ -28,9 +28,11 @@ const errText = "mt-1 block text-xs text-red-600";
 export default function OutboundForm({
   products,
   customers,
+  showPrice,
 }: {
   products: OutboundProductOption[];
   customers: string[];
+  showPrice: boolean;
 }) {
   const [state, formAction, pending] = useActionState(createOutboundAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -76,7 +78,7 @@ export default function OutboundForm({
     setProductId(id);
     const p = products.find((x) => x.id === id);
     // 상품 판매가를 출고단가 기본값으로 (수정 가능)
-    setUnitPriceText(p ? String(p.price) : "");
+    setUnitPriceText(p?.price != null ? String(p.price) : "");
   }
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -148,19 +150,22 @@ export default function OutboundForm({
           )}
           {err.quantity && <span className={errText}>{err.quantity}</span>}
         </label>
-        <label className="flex-1 text-sm">
-          출고단가 (원, 기본 판매가)
-          <Input
-            name="unitPrice"
-            type="number"
-            min={0}
-            step={1}
-            className={input}
-            placeholder="0"
-            value={unitPriceText}
-            onChange={(e) => setUnitPriceText(e.target.value)} />
-          {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
-        </label>
+        {/* 직원은 단가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
+        {showPrice && (
+          <label className="flex-1 text-sm">
+            출고단가 (원, 기본 판매가)
+            <Input
+              name="unitPrice"
+              type="number"
+              min={0}
+              step={1}
+              className={input}
+              placeholder="0"
+              value={unitPriceText}
+              onChange={(e) => setUnitPriceText(e.target.value)} />
+            {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
+          </label>
+        )}
       </div>
 
       <div className="flex gap-4">
@@ -170,7 +175,7 @@ export default function OutboundForm({
             name="customer"
             maxLength={100}
             className={input}
-            placeholder="○○마트"
+            placeholder="예: 한빛마트"
             list="outbound-customers" />
           <datalist id="outbound-customers">
             {customers.map((c) => (
@@ -207,7 +212,7 @@ export default function OutboundForm({
             name="confirmDuplicate"
             value="1"
             disabled={pending}
-            className="mt-2 rounded bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
+            className="mt-2 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             그래도 등록
           </button>

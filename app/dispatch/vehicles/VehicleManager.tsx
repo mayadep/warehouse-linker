@@ -76,16 +76,16 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
 
       {last && <p aria-live="polite" className={`text-sm ${last.status === "success" ? "text-green-700" : "text-red-600"}`}>{last.message}</p>}
 
-      <div className="overflow-x-auto rounded-lg border">
-<table className="w-full text-center text-sm tabular-nums [&_td]:px-3 [&_td]:py-2.5 [&_th]:px-3 [&_th]:py-2.5">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border">
+<table className="data-table">
         <thead>
-          <tr className="border-b bg-muted/60 text-xs font-medium text-muted-foreground">
-            <th className="py-2">차량번호</th>
+          <tr>
+            <th>차량번호</th>
             <th>적재 온도</th>
             <th>실을 수 있는 상품</th>
             <th>기사</th>
             <th>연락처</th>
-            <th>배차 횟수</th>
+            <th className="num">배차 횟수</th>
             <th>비고</th>
             <th>상태</th>
           </tr>
@@ -93,19 +93,19 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
         <tbody>
           {vehicles.length === 0 && (
             <tr>
-              <td colSpan={8} className="py-8 text-gray-400">등록된 차량이 없습니다.</td>
+              <td colSpan={8} className="text-gray-400">등록된 차량이 없습니다.</td>
             </tr>
           )}
           {vehicles.map((v) => (
-            <tr key={v.id} className={`border-b ${v.isActive ? "" : "text-gray-400"}`}>
-              <td className="py-2 font-medium">{v.plateNo}</td>
+            <tr key={v.id} className={`${v.isActive ? "" : "text-gray-400"}`}>
+              <td className="font-medium">{v.plateNo}</td>
               <td><StorageBadge type={v.storageType} /></td>
               <td className="text-xs text-gray-500">
                 {v.storageType === "FROZEN" ? "냉동·냉장·실온" : v.storageType === "REFRIGERATED" ? "냉장·실온" : "실온"}
               </td>
               <td>{v.driverName}</td>
               <td>{v.driverPhone ?? "-"}</td>
-              <td>{v.dispatchCount.toLocaleString()}</td>
+              <td className="num">{v.dispatchCount.toLocaleString()}</td>
               <td className="max-w-40 truncate">{v.memo ?? ""}</td>
               <td>
                 <form action={(fd) => startTransition(() => tAction(fd))} className="flex items-center justify-center gap-2">

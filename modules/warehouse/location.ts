@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { storageTypeForCategory } from "./assign";
 import { STORAGE_TYPE_LABELS } from "./codes";
 import type { LocationChangeInput } from "./validation";
+import { recordAudit } from "@/modules/audit/service";
 
 export class LocationChangeError extends Error {}
 
@@ -35,14 +36,25 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
         name: true,
         category: true,
         locationId: true,
+        status: true,
         location: { select: { id: true, code: true, warehouse: { select: { storageType: true } } } },
       },
     });
     if (!product) throw new LocationChangeError("존재하지 않는 상품입니다.");
+    if (product.status !== "ACTIVE") throw new LocationChangeError("확정되지 않은 상품은 위치를 지정할 수 없습니다.");
     if ((product.locationId ?? null) !== input.expectedLocationId) {
       throw new LocationChangeError("그 사이 이 상품의 위치가 바뀌었습니다. 새로고침 후 다시 시도하세요.");
     }
     const fromCode = product.location?.code ?? null;
+    const audit = (toCode: string | null, swappedWith: string | null) =>
+      recordAudit(tx, {
+        category: "WAREHOUSE",
+        action: "LOCATION_CHANGE",
+        targetId: product.id,
+        targetLabel: `[${product.sku}] ${product.name}`,
+        summary: `${product.name} 보관위치 ${fromCode ?? "없음"} → ${toCode ?? "해제"}${swappedWith ? ` (${swappedWith}와 교환)` : ""}`,
+        detail: { from: fromCode, to: toCode, swappedWith, reason: input.reason },
+      });
 
     // 위치 해제
     if (input.targetCode === null) {
@@ -51,6 +63,7 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
       await tx.productLocationHistory.create({
         data: { productId: product.id, fromCode, toCode: null, reason: input.reason },
       });
+      await audit(null, null);
       return { status: "done", productName: product.name, fromCode, toCode: null, swapped: null };
     }
 
@@ -105,6 +118,7 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
           { productId: occupant.id, fromCode: target.code, toCode: fromCode, swappedWithSku: product.sku, reason: input.reason },
         ],
       });
+      await audit(target.code, `[${occupant.sku}] ${occupant.name}`);
       return {
         status: "done",
         productName: product.name,
@@ -118,6 +132,7 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
     await tx.productLocationHistory.create({
       data: { productId: product.id, fromCode, toCode: target.code, reason: input.reason },
     });
+    await audit(target.code, null);
     return { status: "done", productName: product.name, fromCode, toCode: target.code, swapped: null };
   });
 }
