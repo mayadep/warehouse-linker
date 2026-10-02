@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Modal from "@/components/Modal";
 import { locationCode, rackCode } from "@/modules/warehouse/codes";
+import EmptyState from "@/components/EmptyState";
+import { WarehouseIcon } from "lucide-react";
 
 export type OccupiedCell = { code: string; rackId: string; sku: string; name: string };
 
@@ -104,8 +106,8 @@ export default function RackTable({
         <tbody>
           {racks.length === 0 && (
             <tr>
-              <td colSpan={7} className="text-gray-400">
-                랙이 없습니다. [+ 랙 추가]로 만드세요.
+              <td colSpan={7} className="p-0">
+                <EmptyState icon={WarehouseIcon} title="랙이 없습니다." description="[+ 랙 추가]로 랙을 만들면 보관 위치가 생성됩니다." />
               </td>
             </tr>
           )}

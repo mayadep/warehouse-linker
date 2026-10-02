@@ -11,6 +11,8 @@ import type { StockRow } from "./StockTable";
 import LocationEditor, { type WarehouseOption } from "./LocationEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import EmptyState from "@/components/EmptyState";
+import { ClipboardListIcon } from "lucide-react";
 const initialState: SafetyStockActionState = { status: "idle", message: "" };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -180,8 +182,8 @@ export default function StockLedgerDialog({
                 <tbody>
                   {ledger.entries.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-gray-400">
-                        재고 이력이 없습니다.
+                      <td colSpan={7} className="p-0">
+                        <EmptyState icon={ClipboardListIcon} title="재고 이력이 없습니다." description="입고나 출고가 확정되면 이력이 쌓입니다." />
                       </td>
                     </tr>
                   )}

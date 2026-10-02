@@ -2,16 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOutIcon } from "lucide-react";
 import DevBadge from "./DevBadge";
 import { isActive, menuGroupsFor } from "./nav-menus";
-import { logoutAction } from "@/modules/user/actions";
-import { USER_ROLE_LABELS, type UserRoleCode } from "@/modules/user/codes";
-import { Badge } from "@/components/ui/badge";
+import type { UserRoleCode } from "@/modules/user/codes";
 
-export default function Sidebar({ user }: { user: { name: string; loginId: string; role: UserRoleCode } }) {
+/** 사용자·로그아웃은 헤더(Header)에 있다 */
+export default function Sidebar({ role }: { role: UserRoleCode }) {
   const pathname = usePathname();
-  const groups = menuGroupsFor(user.role);
+  const groups = menuGroupsFor(role);
 
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar p-4 text-sidebar-foreground">
@@ -43,25 +41,6 @@ export default function Sidebar({ user }: { user: { name: string; loginId: strin
           </div>
         ))}
       </nav>
-
-      <div className="mt-auto flex flex-col gap-2 pt-6">
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-sidebar-border px-3 py-2 text-sm">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{user.name}</p>
-            <p className="truncate text-xs text-sidebar-foreground/70">{user.loginId}</p>
-          </div>
-          <Badge variant={user.role === "ADMIN" ? "indigo" : "gray"}>{USER_ROLE_LABELS[user.role]}</Badge>
-        </div>
-        <form action={logoutAction}>
-          <button
-            type="submit"
-            className="flex w-full items-center justify-between rounded-lg border border-sidebar-border px-3 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            로그아웃
-            <LogOutIcon className="size-4 text-[#aeb9cf]" />
-          </button>
-        </form>
-      </div>
     </aside>
   );
 }

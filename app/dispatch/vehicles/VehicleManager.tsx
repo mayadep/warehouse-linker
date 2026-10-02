@@ -7,6 +7,8 @@ import StorageBadge from "../../warehouses/StorageBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import EmptyState from "@/components/EmptyState";
+import { TruckIcon } from "lucide-react";
 export type VehicleRow = {
   id: string;
   plateNo: string;
@@ -93,7 +95,9 @@ export default function VehicleManager({ vehicles }: { vehicles: VehicleRow[] })
         <tbody>
           {vehicles.length === 0 && (
             <tr>
-              <td colSpan={8} className="text-gray-400">등록된 차량이 없습니다.</td>
+              <td colSpan={8} className="p-0">
+                <EmptyState icon={TruckIcon} title="등록된 차량이 없습니다." description="차량을 등록하면 배차를 편성할 수 있습니다." />
+              </td>
             </tr>
           )}
           {vehicles.map((v) => (

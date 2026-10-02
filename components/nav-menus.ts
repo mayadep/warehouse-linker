@@ -6,7 +6,7 @@ export type Menu = { label: string; href: string; dev?: boolean; perm?: Permissi
 export type MenuGroup = { title?: string; menus: Menu[] };
 
 export const menuGroups: MenuGroup[] = [
-  { menus: [{ label: "대시보드", href: "/", dev: true }] },
+  { menus: [{ label: "대시보드", href: "/" }] },
   {
     title: "재고",
     menus: [

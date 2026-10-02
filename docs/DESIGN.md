@@ -107,6 +107,14 @@
 - 같은 기능은 모든 화면에서 같은 UI(검색 버튼, 제목, 상태 뱃지, 표, 모달). 상태→색 매핑은 `modules/*/codes.ts`의 `*_STATUS_TONE`
 - 빈 상태·오류는 사용자가 이해할 한국어 문구로, 개발자용 오류는 로그로
 
+## 헤더 · 대시보드 · 공통 UI (2026-10-02, 참조 목업 기준)
+- **헤더** `components/Header.tsx`(64px): 현재 위치 / 상품 검색(→ `/stock?q=`) / 날짜·시각(KST, `lib/datetime.ts formatKstNow`, 30초마다 갱신) / 재고 알림 벨(재고 없음·부족 수, → `/stock?status=short`) / 사용자 메뉴(이름·역할, 로그아웃). 사이드바 하단의 사용자·로그아웃은 헤더로 이동. 검색·알림은 `stock.view` 권한이 있을 때만 표시. 알림 수는 `app/layout.tsx`에서 `countShortStock()`으로 조회. **창고 선택은 재고가 상품 단위(창고별 재고 없음)라 넣지 않음** — 창고별 재고를 만들 때 추가
+- **대시보드** `/` (`app/page.tsx`, 집계 `modules/dashboard/queries.ts` 읽기 전용): 오늘의 운영 현황 KPI 4개(입고 건수·출고 건수·현재 재고 수량·재고 부족 상품) + 주요 알림(부족·품절 상위 5, 관리자는 확정 대기 상품·입고·출고 건수) + 최근 입출고 내역(확정 건 6개). 기간은 KST 하루(자정~자정), 입고·출고는 `CONFIRMED`만 집계하고 전일 대비 증감 표시. 재고 카드·알림은 `stock.view` 권한 필요, 대기 건수는 `admin`만
+- **KpiCard** `components/KpiCard.tsx`: 라벨+아이콘 / 큰 숫자+단위 / 증감(▲▼ 화살표+문구, 색만으로 구분하지 않음) 또는 보조 문구. `href`를 주면 해당 목록으로 이동. 부족·품절은 `tone`으로 노랑·빨강
+- **EmptyState** `components/EmptyState.tsx`: 아이콘+제목+안내 문구(+버튼). 표의 빈 행은 `<td colSpan className="p-0"><EmptyState …/></td>`로 통일(재고·입고·출고·상품·발주/수주·로그·차량·랙·재고 이력)
+- **Skeleton** `components/Skeleton.tsx`(Skeleton·KpiCardSkeleton·TableSkeleton) + `app/loading.tsx`: 페이지 이동 중 제목·KPI·표 모양을 먼저 보여 줌(스피너로 화면 전체를 막지 않음)
+- 아직 안 한 것: 홈 화면(Quick Action 카드), 차트(입출고 추이·창고별 재고), 공지사항, 주문 상태 현황 위젯, 날짜 범위 필터(오늘·7일·30일)
+
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
 2. 유사 건 경고: 최근 10분 내 같은 상품·거래처·수량이 있으면 status "confirm" 반환(저장 안 함) → [그래도 등록](confirmDuplicate=1) 시 저장

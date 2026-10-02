@@ -9,6 +9,8 @@ import { can } from "@/modules/user/codes";
 import DevBadge from "@/components/DevBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import EmptyState from "@/components/EmptyState";
+import { PackageIcon } from "lucide-react";
 export default async function NewProductPage({
   searchParams,
 }: {
@@ -95,8 +97,8 @@ export default async function NewProductPage({
         <tbody>
           {list.length === 0 && (
             <tr>
-              <td colSpan={colCount} className="text-gray-400">
-                {keyword ? "검색 결과가 없습니다." : "등록된 상품이 없습니다."}
+              <td colSpan={colCount} className="p-0">
+                <EmptyState icon={PackageIcon} title={keyword ? "검색 결과가 없습니다." : "등록된 상품이 없습니다."} description={keyword ? "다른 검색어로 찾아보세요." : "상품을 등록하면 재고 관리가 시작됩니다."} />
               </td>
             </tr>
           )}

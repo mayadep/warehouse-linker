@@ -5,6 +5,8 @@ import OutboundEditDialog from "./OutboundEditDialog";
 import OutboundReviewDialog, { type OutboundReviewKind } from "./OutboundReviewDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import EmptyState from "@/components/EmptyState";
+import { TruckIcon } from "lucide-react";
 export type OutboundRevisionView = {
   createdAtText: string;
   reason: string;
@@ -180,8 +182,8 @@ export default function OutboundTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={colCount} className="text-gray-400">
-                출고 내역이 없습니다.
+              <td colSpan={colCount} className="p-0">
+                <EmptyState icon={TruckIcon} title="출고 내역이 없습니다." description="출고를 등록하면 이곳에 표시됩니다." />
               </td>
             </tr>
           )}

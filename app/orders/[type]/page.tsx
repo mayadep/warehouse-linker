@@ -17,7 +17,8 @@ import {
 } from "@/modules/order/codes";
 import { listOrders, listProductsForOrder, listRecentPartners, ORDER_PAGE_SIZE } from "@/modules/order/service";
 import OrderCreateButton from "../OrderCreateButton";
-import { ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, SearchIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, ClipboardListIcon, RotateCcwIcon, SearchIcon } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -103,8 +104,12 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={9} className="text-muted-foreground">
-                {ORDER_TYPE_LABELS[type]} 내역이 없습니다.
+              <td colSpan={9} className="p-0">
+                <EmptyState
+                  icon={ClipboardListIcon}
+                  title={`${ORDER_TYPE_LABELS[type]} 내역이 없습니다.`}
+                  description="새로 등록하거나 상태·검색 조건을 바꿔 보세요."
+                />
               </td>
             </tr>
           )}

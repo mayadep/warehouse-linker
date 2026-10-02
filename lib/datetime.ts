@@ -34,3 +34,20 @@ export function parseKstDate(raw: string): Date | null {
 export function todayKst(now = new Date()): string {
   return toKstDate(now);
 }
+
+const KST_NOW_FMT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** 헤더 표시용 현재 시각 (KST): "2026.10.02 (금) 15:24" */
+export function formatKstNow(now = new Date()): string {
+  const p = Object.fromEntries(KST_NOW_FMT.formatToParts(now).map((x) => [x.type, x.value]));
+  return `${p.year}.${p.month}.${p.day} (${p.weekday}) ${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+}

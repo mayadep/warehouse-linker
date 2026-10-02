@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import StockLedgerDialog from "./StockLedgerDialog";
 import type { WarehouseOption } from "./LocationEditor";
+import EmptyState from "@/components/EmptyState";
+import { SearchXIcon } from "lucide-react";
 
 export type StockRow = {
   id: string;
@@ -75,8 +77,8 @@ export default function StockTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={showPrice ? 12 : 10} className="text-muted-foreground">
-                조건에 맞는 상품이 없습니다.
+              <td colSpan={showPrice ? 12 : 10} className="p-0">
+                <EmptyState icon={SearchXIcon} title="조건에 맞는 상품이 없습니다." description="검색어나 상태 조건을 바꿔 보세요." />
               </td>
             </tr>
           )}

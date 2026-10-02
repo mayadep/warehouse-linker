@@ -5,6 +5,8 @@ import InboundEditDialog from "./InboundEditDialog";
 import InboundReviewDialog, { type InboundReviewKind } from "./InboundReviewDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import EmptyState from "@/components/EmptyState";
+import { PackageIcon } from "lucide-react";
 export type InboundRevisionView = {
   createdAtText: string;
   reason: string;
@@ -179,8 +181,8 @@ export default function InboundTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={colCount} className="text-center text-gray-400">
-                입고 내역이 없습니다.
+              <td colSpan={colCount} className="p-0">
+                <EmptyState icon={PackageIcon} title="입고 내역이 없습니다." description="입고를 등록하면 이곳에 표시됩니다." />
               </td>
             </tr>
           )}

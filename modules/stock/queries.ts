@@ -86,8 +86,13 @@ function buildOrderBy(sort: StockFilter["sort"]): Prisma.ProductOrderByWithRelat
 
 const ACTIVE: Prisma.ProductWhereInput = { status: "ACTIVE" };
 
+/** 재고 없음 + 부족(안전재고 이하) 상품 수 — 헤더 알림·대시보드용 */
+export async function countShortStock(): Promise<number> {
+  return prisma.product.count({ where: { AND: [ACTIVE, statusWhere("short")] } });
+}
+
 /** 요약 (필터와 무관하게 전체 기준, DB 집계) */
-async function getStockSummary() {
+export async function getStockSummary() {
   const [total, out, low, value] = await Promise.all([
     prisma.product.count({ where: ACTIVE }),
     prisma.product.count({ where: { AND: [ACTIVE, statusWhere("out")] } }),
