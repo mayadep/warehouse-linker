@@ -63,6 +63,8 @@ export const AUDIT_ACTION_LABELS = {
   OUTBOUND_CANCEL: "출고 취소",
   OUTBOUND_DELETE: "대기 출고 삭제",
   SAFETY_STOCK_UPDATE: "안전재고 변경",
+  STOCK_EXPIRY_CHANGE: "유통기한 변경",
+  STOCK_MOVE: "재고 위치 이동",
   WAREHOUSE_CREATE: "창고 추가",
   RACK_ADD: "랙 추가",
   LOCATION_AUTO_ASSIGN: "위치 자동 배정",
@@ -80,10 +82,12 @@ export const AUDIT_ACTION_LABELS = {
   DISPATCH_STATUS: "배차 상태 변경",
   LOGIN: "로그인",
   LOGIN_FAIL: "로그인 실패",
+  LOGIN_LOCKED: "로그인 잠금",
   LOGOUT: "로그아웃",
   USER_CREATE: "사용자 등록",
   USER_UPDATE: "사용자 수정",
   USER_PASSWORD_RESET: "비밀번호 재설정",
+  USER_PASSWORD_CHANGE: "비밀번호 변경",
 } as const satisfies Record<string, string>;
 
 export type AuditActionCode = keyof typeof AUDIT_ACTION_LABELS;

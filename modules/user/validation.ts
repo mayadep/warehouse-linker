@@ -2,7 +2,9 @@
 import { INT_RE, UUID_RE, text } from "@/lib/form";
 import { isUserRole, LOGIN_ID_RE, USER_LIMITS, type UserRoleCode } from "./codes";
 
-export type UserFieldErrors = Partial<Record<"loginId" | "name" | "role" | "password" | "isActive", string>>;
+export type UserFieldErrors = Partial<
+  Record<"loginId" | "name" | "role" | "password" | "isActive" | "currentPassword" | "confirm", string>
+>;
 
 type Result<T> = { ok: true; data: T } | { ok: false; errors: UserFieldErrors; message?: string };
 
@@ -75,4 +77,27 @@ export function parsePasswordResetForm(fd: FormData): Result<PasswordResetInput>
   checkPassword(password, errors);
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, data: { userId, password } };
+}
+
+export type PasswordChangeInput = { currentPassword: string; newPassword: string };
+
+/** 본인 비밀번호 변경: 현재 비밀번호 · 새 비밀번호(규칙) · 확인 일치 · 현재와 다름 */
+export function parsePasswordChangeForm(fd: FormData): Result<PasswordChangeInput> {
+  const errors: UserFieldErrors = {};
+  const str = (k: string) => {
+    const v = fd.get(k);
+    return typeof v === "string" ? v : "";
+  };
+  const currentPassword = str("currentPassword");
+  const newPassword = str("password");
+  const confirm = str("confirm");
+  if (!currentPassword) errors.currentPassword = "현재 비밀번호를 입력하세요.";
+  else if (currentPassword.length > USER_LIMITS.maxPassword) errors.currentPassword = "현재 비밀번호가 올바르지 않습니다.";
+  checkPassword(newPassword, errors);
+  if (!errors.password && currentPassword && newPassword === currentPassword)
+    errors.password = "새 비밀번호가 현재 비밀번호와 같습니다.";
+  if (!confirm) errors.confirm = "새 비밀번호를 한 번 더 입력하세요.";
+  else if (confirm !== newPassword) errors.confirm = "새 비밀번호와 확인 값이 다릅니다.";
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  return { ok: true, data: { currentPassword, newPassword } };
 }

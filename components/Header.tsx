@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BellIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, LogOutIcon, SearchIcon, UserIcon } from "lucide-react";
+import { BellIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, KeyRoundIcon, LogOutIcon, SearchIcon, UserIcon } from "lucide-react";
 import { findMenu } from "./nav-menus";
+import PasswordChangeModal from "./PasswordChangeModal";
 import { formatKstNow } from "@/lib/datetime";
 import { logoutAction } from "@/modules/user/actions";
 import { USER_ROLE_LABELS, type UserRoleCode } from "@/modules/user/codes";
@@ -29,6 +30,7 @@ export default function Header({
   const pathname = usePathname();
   const current = findMenu(pathname);
   const [now, setNow] = useState(nowText);
+  const [pwOpen, setPwOpen] = useState(false);
 
   // 서버가 준 시각으로 시작해 1분마다 갱신 (하이드레이션 불일치 방지)
   useEffect(() => {
@@ -97,6 +99,17 @@ export default function Header({
           <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-popover p-1 shadow-[0_4px_12px_rgba(15,23,42,0.08)]">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.currentTarget.closest("details")?.removeAttribute("open");
+              setPwOpen(true);
+            }}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors duration-150 ease-out hover:bg-muted"
+          >
+            비밀번호 변경
+            <KeyRoundIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+          </button>
           <form action={logoutAction}>
             <button
               type="submit"
@@ -108,6 +121,7 @@ export default function Header({
           </form>
         </div>
       </details>
+      {pwOpen && <PasswordChangeModal onClose={() => setPwOpen(false)} />}
     </header>
   );
 }

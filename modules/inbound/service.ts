@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { toKstDateTimeLocal } from "@/lib/datetime";
+import { dateOnlyToDb, dbToDateOnly, toKstDateTimeLocal } from "@/lib/datetime";
 import {
   changeStock,
   InsufficientStockError,
@@ -64,10 +64,15 @@ async function createInboundTx(input: InboundCreateInput, actor: CurrentUser) {
 
     const product = await tx.product.findUnique({
       where: { id: input.productId },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, locationId: true },
     });
     if (!product) throw new InboundError("존재하지 않는 상품입니다.");
     if (product.status !== "ACTIVE") throw new InboundError(`${product.name}은(는) 아직 확정되지 않은 상품입니다. 관리자 확정 후 입고하세요.`);
+
+    const location = input.locationCode
+      ? await tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true } })
+      : null;
+    if (input.locationCode && !location) throw new InboundError(`존재하지 않는 위치코드입니다: ${input.locationCode}`);
 
     const unitCost = confirmed ? input.unitCost : null;
     const now = new Date();
@@ -79,6 +84,8 @@ async function createInboundTx(input: InboundCreateInput, actor: CurrentUser) {
         supplier: input.supplier,
         memo: input.memo,
         receivedAt: input.receivedAt,
+        locationId: location?.id ?? null,
+        expiryDate: input.expiryDate ? dateOnlyToDb(input.expiryDate) : null,
         requestId: input.requestId,
         status: confirmed ? "CONFIRMED" : "PENDING",
         createdById: actor.id,
@@ -93,6 +100,7 @@ async function createInboundTx(input: InboundCreateInput, actor: CurrentUser) {
           delta: input.quantity,
           type: "INBOUND",
           inboundId: inbound.id,
+          bucket: { locationId: location?.id ?? product.locationId, expiryDate: input.expiryDate },
         })
       : null;
 
@@ -108,6 +116,8 @@ async function createInboundTx(input: InboundCreateInput, actor: CurrentUser) {
         supplier: input.supplier,
         memo: input.memo,
         receivedAt: toKstDateTimeLocal(input.receivedAt).replace("T", " "),
+        ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
+        ...(input.locationCode ? { location: input.locationCode } : {}),
         status: confirmed ? "확정" : "확정 대기",
         ...(r ? { afterStock: r.afterStock } : {}),
       },
@@ -124,7 +134,7 @@ export async function confirmInbound(input: InboundConfirmInput, actor: CurrentU
   return prisma.$transaction(async (tx) => {
     const cur = await tx.inbound.findUnique({
       where: { id: input.inboundId },
-      include: { product: { select: { name: true } } },
+      include: { product: { select: { name: true, locationId: true } } },
     });
     if (!cur) throw new InboundError("존재하지 않는 입고 건입니다.");
     if (cur.status !== "PENDING") throw new InboundError("확정 대기 중인 입고만 확정할 수 있습니다.");
@@ -141,7 +151,17 @@ export async function confirmInbound(input: InboundConfirmInput, actor: CurrentU
     });
     if (r0.count === 0) throw new InboundConflictError(CONFLICT);
 
-    const r = await changeStock(tx, { productId: cur.productId, delta: cur.quantity, type: "INBOUND", inboundId: cur.id });
+    // 위치를 지정하지 않았으면 확정 시점의 상품 기본 보관위치
+    const r = await changeStock(tx, {
+      productId: cur.productId,
+      delta: cur.quantity,
+      type: "INBOUND",
+      inboundId: cur.id,
+      bucket: {
+        locationId: cur.locationId ?? cur.product.locationId,
+        expiryDate: cur.expiryDate ? dbToDateOnly(cur.expiryDate) : null,
+      },
+    });
     const creator = cur.createdById
       ? await tx.user.findUnique({ where: { id: cur.createdById }, select: { name: true, loginId: true } })
       : null;

@@ -39,6 +39,9 @@ export function rackCode(number: number): string {
 }
 
 /** 위치코드: 창고코드-랙-단-구획 (예: RF1-R01-2-3) */
+/** 위치코드 형식: 창고코드(영문 대문자 시작 2~10자)-R랙(2~3자리)-단-구획 (locationCode 결과와 같은 모양) */
+export const LOCATION_CODE_RE = /^[A-Z][A-Z0-9]{1,9}-R\d{2,3}-\d{1,2}-\d{1,2}$/;
+
 export function locationCode(warehouseCode: string, rackNumber: number, level: number, bin: number): string {
   return `${warehouseCode}-${rackCode(rackNumber)}-${level}-${bin}`;
 }

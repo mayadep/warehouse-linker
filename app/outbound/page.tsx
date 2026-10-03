@@ -7,7 +7,7 @@ import {
   listRecentCustomers,
   listRecentOutbounds,
 } from "@/modules/outbound/service";
-import { toKstDateTimeLocal } from "@/lib/datetime";
+import { dbToDateOnly, toKstDateTimeLocal } from "@/lib/datetime";
 import OutboundForm from "./OutboundForm";
 import OutboundTable, { type OutboundRow } from "./OutboundTable";
 
@@ -64,6 +64,13 @@ export default async function OutboundPage() {
   const rows: OutboundRow[] = recent.map((r) => ({
     id: r.id,
     version: r.version,
+    productId: r.productId,
+    pickValue: r.pickFixed
+      ? `${r.pickLocationId ?? ""}|${r.pickExpiryDate ? dbToDateOnly(r.pickExpiryDate) : ""}`
+      : "",
+    pickLabel: r.pickFixed
+      ? `${r.pickLocation?.code ?? "미지정"} · ${r.pickExpiryDate ? dbToDateOnly(r.pickExpiryDate) : "유통기한 미상"}`
+      : null,
     sku: r.product.sku,
     productName: r.product.name,
     baseUnit: r.product.baseUnit,
@@ -79,7 +86,14 @@ export default async function OutboundPage() {
     memo: r.memo,
     shippedAtText: dateFmt.format(r.shippedAt),
     shippedAtInput: toKstDateTimeLocal(r.shippedAt),
-    originalMovement: r.stockMovements[0] ?? null,
+    // 여러 칸에서 나간 경우: 첫 칸 전 재고(최대) → 마지막 칸 후 재고(최소)
+    originalMovement:
+      r.stockMovements.length > 0
+        ? {
+            beforeStock: Math.max(...r.stockMovements.map((m) => m.beforeStock)),
+            afterStock: Math.min(...r.stockMovements.map((m) => m.afterStock)),
+          }
+        : null,
     revisionCount: r._count.revisions,
     revisions: r.revisions.map((rv) => ({
       createdAtText: dateFmt.format(rv.createdAt),

@@ -2,6 +2,9 @@
 
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
+import { UUID_RE } from "@/lib/form";
+import { dbToDateOnly } from "@/lib/datetime";
+import { listProductBalances } from "@/modules/stock/queries";
 import {
   parseOutboundConfirmForm,
   parseOutboundForm,
@@ -129,6 +132,25 @@ export async function updateOutboundAction(
     console.error("[outbound] update failed", e);
     return { status: "error", message: "출고 수정 중 오류가 발생했습니다. 다시 시도하세요.", ts: Date.now() };
   }
+}
+
+/** 출고 위치 선택지 1칸. value = "위치id|유통기한" (빈칸 = 미지정·미상) */
+export type PickOption = { value: string; locationCode: string | null; expiryDate: string | null; quantity: number };
+
+/** 상품의 칸별 재고 (출고 위치 선택용, 자동 출고 순서대로) */
+export async function getPickOptionsAction(productId: string): Promise<PickOption[] | null> {
+  if (!(await authorize("outbound.create"))) return null;
+  if (typeof productId !== "string" || !UUID_RE.test(productId)) return null;
+  const rows = await listProductBalances(productId);
+  return rows.map((b) => {
+    const expiryDate = b.expiryDate ? dbToDateOnly(b.expiryDate) : null;
+    return {
+      value: `${b.locationId ?? ""}|${expiryDate ?? ""}`,
+      locationCode: b.location?.code ?? null,
+      expiryDate,
+      quantity: b.quantity,
+    };
+  });
 }
 
 export type OutboundReviewState = { status: "idle" | "success" | "error"; message: string; ts?: number };

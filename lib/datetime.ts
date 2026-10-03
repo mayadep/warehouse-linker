@@ -30,6 +30,18 @@ export function parseKstDate(raw: string): Date | null {
   return Number.isNaN(d.getTime()) || toKstDate(d) !== raw ? null : d;
 }
 
+/**
+ * 시각 없는 날짜(유통기한 등, DB DATE 컬럼). Prisma 는 DATE 를 UTC 자정 Date 로 주고받으므로
+ * 문자열 "YYYY-MM-DD" 를 그대로 UTC 자정으로 변환한다 (시간대 계산 없음)
+ */
+export function isDateOnly(raw: string): boolean {
+  if (!DATE_RE.test(raw)) return false;
+  const d = new Date(`${raw}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === raw;
+}
+export const dateOnlyToDb = (s: string) => new Date(`${s}T00:00:00Z`);
+export const dbToDateOnly = (d: Date) => d.toISOString().slice(0, 10);
+
 /** 오늘 KST 날짜 "YYYY-MM-DD" */
 export function todayKst(now = new Date()): string {
   return toKstDate(now);

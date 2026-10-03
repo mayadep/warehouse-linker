@@ -10,7 +10,9 @@ import {
   parseRequestId,
   parseVersion,
   parseConfirm,
+  parseOptionalDate,
 } from "@/lib/form";
+import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 
 export const INBOUND_LIMITS = {
   maxQuantity: 1_000_000,
@@ -31,6 +33,10 @@ export type InboundInput = {
 
 /** 신규 입고 등록 입력 (중복 방지 정보 포함) */
 export type InboundCreateInput = InboundInput & {
+  /** 유통기한 "YYYY-MM-DD" (선택, 나중에 재고현황에서 입력 가능) */
+  expiryDate: string | null;
+  /** 넣을 위치코드 (선택, 비우면 상품 기본 보관위치) — 존재 여부는 서비스에서 확인 */
+  locationCode: string | null;
   requestId: string;
   /** 유사 입고 경고를 확인하고 그래도 등록 */
   confirmDuplicate: boolean;
@@ -76,8 +82,13 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
 
   const c = parseCommon(fd, now, false);
   const requestId = parseRequestId(fd);
-  for (const [k, r] of Object.entries({ ...c, requestId })) {
+  const expiryDate = parseOptionalDate(fd, "expiryDate", "유통기한");
+  for (const [k, r] of Object.entries({ ...c, requestId, expiryDate })) {
     if (r.error) errors[k as InboundField] = r.error;
+  }
+  const locationCode = text(fd, "locationCode").toUpperCase() || null;
+  if (locationCode && !LOCATION_CODE_RE.test(locationCode)) {
+    errors.locationCode = "위치코드 형식이 올바르지 않습니다. (예: RF1-R01-2-3)";
   }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
@@ -91,6 +102,8 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
       supplier: c.supplier.value,
       memo: c.memo.value,
       receivedAt: c.receivedAt.value,
+      expiryDate: expiryDate.value,
+      locationCode,
       requestId: requestId.value,
       confirmDuplicate: parseConfirm(fd),
     },

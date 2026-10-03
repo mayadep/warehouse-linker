@@ -4,33 +4,85 @@ import { isUniqueViolation } from "@/modules/stock/service";
 import { recordAudit } from "@/modules/audit/service";
 import { getDummyHash, hashPassword, verifyPassword } from "./password";
 import { startSession, type CurrentUser } from "./auth";
-import { USER_ROLE_LABELS } from "./codes";
-import type { PasswordResetInput, UserCreateInput, UserUpdateInput } from "./validation";
+import { LOGIN_LIMITS, USER_ROLE_LABELS } from "./codes";
+import type { PasswordChangeInput, PasswordResetInput, UserCreateInput, UserUpdateInput } from "./validation";
 
 export class UserError extends Error {}
 
 const label = (u: { name: string; loginId: string }) => `${u.name}(${u.loginId})`;
 
-/** 로그인: 성공 시 세션 시작. 실패 사유(아이디 없음/비밀번호 틀림/비활성)는 구분해 알려주지 않음 */
-export async function login(loginId: string, password: string): Promise<CurrentUser | null> {
+export const lockedMessage = (minutes: number) =>
+  `로그인 시도가 너무 많습니다. ${minutes}분 후 다시 시도하세요. (연속 ${LOGIN_LIMITS.maxFails}회 실패)`;
+
+/** 잠금 남은 시간(분, 올림). 잠겨 있지 않으면 0 */
+async function lockedMinutes(loginId: string): Promise<number> {
+  const t = await prisma.loginThrottle.findUnique({ where: { loginId }, select: { lockedUntil: true } });
+  const ms = t?.lockedUntil ? t.lockedUntil.getTime() - Date.now() : 0;
+  return ms > 0 ? Math.ceil(ms / 60_000) : 0;
+}
+
+/**
+ * 실패 1회 기록. 같은 아이디는 advisory lock 으로 직렬화해 동시 요청에도 횟수가 빠지지 않는다.
+ * 잠금이 끝난 기록은 1부터 다시 센다. 이번 실패로 잠겼으면 true
+ */
+async function recordLoginFailure(tx: Prisma.TransactionClient, loginId: string): Promise<boolean> {
+  await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext(${"login:" + loginId}))`;
+  const now = new Date();
+  const t = await tx.loginThrottle.findUnique({ where: { loginId } });
+  const expired = !!t?.lockedUntil && t.lockedUntil <= now;
+  const failCount = !t || expired ? 1 : t.failCount + 1;
+  const lockedUntil =
+    failCount >= LOGIN_LIMITS.maxFails ? new Date(now.getTime() + LOGIN_LIMITS.lockMinutes * 60_000) : null;
+  await tx.loginThrottle.upsert({
+    where: { loginId },
+    create: { loginId, failCount, lockedUntil },
+    update: { failCount, lockedUntil },
+  });
+  return lockedUntil !== null;
+}
+
+export type LoginResult = { ok: true; user: CurrentUser } | { ok: false; lockedMinutes?: number };
+
+/**
+ * 로그인: 성공 시 세션 시작. 실패 사유(아이디 없음/비밀번호 틀림/비활성)는 구분해 알려주지 않음.
+ * 같은 아이디로 연속 실패하면 잠금 (없는 아이디도 똑같이 잠가서 아이디 존재 여부가 드러나지 않게 함)
+ */
+export async function login(loginId: string, password: string): Promise<LoginResult> {
+  // 잠금 중에는 비밀번호를 비교하지 않음. 잠긴 동안의 시도는 감사 로그에 남기지 않음(로그 폭증 방지)
+  const locked = await lockedMinutes(loginId);
+  if (locked > 0) return { ok: false, lockedMinutes: locked };
+
   const user = await prisma.user.findUnique({ where: { loginId } });
   // 아이디가 없어도 같은 시간이 걸리도록 비교
   const ok = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
   if (!user || !ok || !user.isActive) {
-    await prisma.$transaction((tx) =>
-      recordAudit(tx, {
+    const nowLocked = await prisma.$transaction(async (tx) => {
+      const lockedNow = await recordLoginFailure(tx, loginId);
+      await recordAudit(tx, {
         category: "USER",
         action: "LOGIN_FAIL",
         targetId: user?.id ?? null,
         targetLabel: loginId,
         summary: `로그인 실패: ${loginId}${user && ok && !user.isActive ? " (비활성 계정)" : ""}`,
         actor: null,
-      })
-    );
-    return null;
+      });
+      if (lockedNow) {
+        await recordAudit(tx, {
+          category: "USER",
+          action: "LOGIN_LOCKED",
+          targetId: user?.id ?? null,
+          targetLabel: loginId,
+          summary: `로그인 잠금: ${loginId} (연속 ${LOGIN_LIMITS.maxFails}회 실패, ${LOGIN_LIMITS.lockMinutes}분)`,
+          actor: null,
+        });
+      }
+      return lockedNow;
+    });
+    return nowLocked ? { ok: false, lockedMinutes: LOGIN_LIMITS.lockMinutes } : { ok: false };
   }
   const current: CurrentUser = { id: user.id, loginId: user.loginId, name: user.name, role: user.role };
   await prisma.$transaction(async (tx) => {
+    await tx.loginThrottle.deleteMany({ where: { loginId } });
     await startSession(tx, user.id);
     await recordAudit(tx, {
       category: "USER",
@@ -41,7 +93,7 @@ export async function login(loginId: string, password: string): Promise<CurrentU
       actor: current,
     });
   });
-  return current;
+  return { ok: true, user: current };
 }
 
 export async function recordLogout(user: CurrentUser) {
@@ -139,6 +191,7 @@ export async function resetPassword(input: PasswordResetInput) {
     if (!u) throw new UserError("존재하지 않는 사용자입니다.");
     await tx.user.update({ where: { id: u.id }, data: { passwordHash, version: { increment: 1 } } });
     await tx.session.deleteMany({ where: { userId: u.id } });
+    await tx.loginThrottle.deleteMany({ where: { loginId: u.loginId } }); // 로그인 잠금도 해제
     await recordAudit(tx, {
       category: "USER",
       action: "USER_PASSWORD_RESET",
@@ -147,6 +200,37 @@ export async function resetPassword(input: PasswordResetInput) {
       summary: `비밀번호 재설정: ${label(u)}`,
     });
     return { loginId: u.loginId };
+  });
+}
+
+/**
+ * 본인 비밀번호 변경: 현재 비밀번호 확인 → 변경, 지금 쓰는 세션만 남기고 다른 로그인은 종료.
+ * 현재 비밀번호 확인 실패도 로그인 시도 제한에 포함 (탈취한 세션으로 비밀번호 대입 방지)
+ */
+export async function changeOwnPassword(user: CurrentUser, input: PasswordChangeInput, keepSessionId: string) {
+  const locked = await lockedMinutes(user.loginId);
+  if (locked > 0) throw new UserError(lockedMessage(locked));
+
+  const cur = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
+  if (!cur) throw new UserError("존재하지 않는 사용자입니다.");
+  if (!(await verifyPassword(input.currentPassword, cur.passwordHash))) {
+    const nowLocked = await prisma.$transaction((tx) => recordLoginFailure(tx, user.loginId));
+    throw new UserError(nowLocked ? lockedMessage(LOGIN_LIMITS.lockMinutes) : "현재 비밀번호가 올바르지 않습니다.");
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: user.id }, data: { passwordHash, version: { increment: 1 } } });
+    await tx.session.deleteMany({ where: { userId: user.id, id: { not: keepSessionId } } });
+    await tx.loginThrottle.deleteMany({ where: { loginId: user.loginId } });
+    await recordAudit(tx, {
+      category: "USER",
+      action: "USER_PASSWORD_CHANGE",
+      targetId: user.id,
+      targetLabel: label(user),
+      summary: `비밀번호 변경(본인): ${label(user)}`,
+      actor: user,
+    });
   });
 }
 

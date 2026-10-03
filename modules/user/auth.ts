@@ -38,6 +38,12 @@ export async function endSession() {
   store.delete(SESSION_COOKIE);
 }
 
+/** 현재 세션 id(토큰 해시). 쿠키가 없으면 null */
+export async function currentSessionId(): Promise<string | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return token ? hashToken(token) : null;
+}
+
 /** 현재 로그인 사용자 (요청당 1회 조회). 만료·비활성 계정이면 null */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;

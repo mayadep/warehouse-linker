@@ -25,6 +25,10 @@ const STATUS_BADGE: Record<OutboundStatusCode, { label: string; tone: "amber" | 
 export type OutboundRow = {
   id: string;
   version: number;
+  productId: string;
+  /** 출고 위치 지정 ("위치id|유통기한", "" = 자동) · 표시용 이름 */
+  pickValue: string;
+  pickLabel: string | null;
   sku: string;
   productName: string;
   baseUnit: string;

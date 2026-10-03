@@ -10,7 +10,10 @@ import {
   parseRequestId,
   parseVersion,
   parseConfirm,
+  type FieldResult,
 } from "@/lib/form";
+import { isDateOnly } from "@/lib/datetime";
+import type { StockBucket } from "@/modules/stock/service";
 
 export const OUTBOUND_LIMITS = {
   maxQuantity: 1_000_000,
@@ -30,6 +33,8 @@ export type OutboundInput = {
 };
 
 export type OutboundCreateInput = OutboundInput & {
+  /** 출고 위치 지정 칸 (null = 자동) */
+  pick: StockBucket | null;
   requestId: string;
   confirmDuplicate: boolean;
 };
@@ -72,7 +77,8 @@ export function parseOutboundForm(fd: FormData, now = new Date()): OutboundParse
 
   const c = parseCommon(fd, now, false);
   const requestId = parseRequestId(fd);
-  for (const [k, r] of Object.entries({ ...c, requestId })) {
+  const pick = parsePick(fd);
+  for (const [k, r] of Object.entries({ ...c, requestId, pick })) {
     if (r.error) errors[k as OutboundField] = r.error;
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors };
@@ -86,6 +92,7 @@ export function parseOutboundForm(fd: FormData, now = new Date()): OutboundParse
       customer: c.customer.value,
       memo: c.memo.value,
       shippedAt: c.shippedAt.value,
+      pick: pick.value,
       requestId: requestId.value,
       confirmDuplicate: parseConfirm(fd),
     },
@@ -121,8 +128,27 @@ export function parseOutboundUpdateForm(fd: FormData, now = new Date()): Outboun
   };
 }
 
-/** 출고 확정 (관리자): 단가 입력 가능 */
-export type OutboundConfirmInput = { outboundId: string; version: number; unitPrice: number | null };
+/**
+ * 출고 위치 선택값: "" = 자동, "위치id|유통기한" (위치id ""=미지정, 유통기한 ""=미상)
+ * 칸이 실제로 있는지·수량은 서비스(changeStock strict)에서 확인
+ */
+export function parsePick(fd: FormData): FieldResult<StockBucket | null> {
+  const raw = text(fd, "pick");
+  if (!raw) return { value: null };
+  const [loc, exp, ...rest] = raw.split("|");
+  if (rest.length > 0 || exp === undefined) return { value: null, error: "출고 위치가 올바르지 않습니다." };
+  if (loc && !UUID_RE.test(loc)) return { value: null, error: "출고 위치가 올바르지 않습니다." };
+  if (exp && !isDateOnly(exp)) return { value: null, error: "출고 위치가 올바르지 않습니다." };
+  return { value: { locationId: loc || null, expiryDate: exp || null } };
+}
+
+/** 출고 확정 (관리자): 단가·출고 위치 입력 가능 */
+export type OutboundConfirmInput = {
+  outboundId: string;
+  version: number;
+  unitPrice: number | null;
+  pick: StockBucket | null;
+};
 
 export function parseOutboundConfirmForm(
   fd: FormData
@@ -132,7 +158,9 @@ export function parseOutboundConfirmForm(
   if (!UUID_RE.test(outboundId) || version.error) return { ok: false, message: "잘못된 요청입니다. 새로고침 후 다시 시도하세요." };
   const unitPrice = parseOptionalMoney(fd, "unitPrice", "출고단가", OUTBOUND_LIMITS.maxUnitPrice);
   if (unitPrice.error) return { ok: false, message: unitPrice.error };
-  return { ok: true, data: { outboundId, version: version.value, unitPrice: unitPrice.value } };
+  const pick = parsePick(fd);
+  if (pick.error) return { ok: false, message: pick.error };
+  return { ok: true, data: { outboundId, version: version.value, unitPrice: unitPrice.value, pick: pick.value } };
 }
 
 /** 출고 취소(확정 건) · 삭제(대기 건): 사유 필수 */

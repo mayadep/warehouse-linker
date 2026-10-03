@@ -1,5 +1,5 @@
 // 폼 입력값 공통 파서 (서버 검증용). 각 모듈 validation 에서 사용한다.
-import { parseKstDateTimeLocal } from "./datetime";
+import { isDateOnly, parseKstDateTimeLocal } from "./datetime";
 
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,6 +47,16 @@ export function parseOptionalText(
   const v = text(fd, key);
   if (v.length > max) return { value: null, error: `${label}는 ${max}자 이내로 입력하세요.` };
   return { value: v || null };
+}
+
+/** 선택 입력 날짜 "YYYY-MM-DD" (빈값 null). 유통기한 등 시각 없는 날짜 */
+export function parseOptionalDate(fd: FormData, key: string, label: string): FieldResult<string | null> {
+  const v = text(fd, key);
+  if (!v) return { value: null };
+  if (!isDateOnly(v)) return { value: null, error: `${label} 형식이 올바르지 않습니다. (예: 2026-12-31)` };
+  const y = Number(v.slice(0, 4));
+  if (y < 2000 || y > 2100) return { value: null, error: `${label}가 올바르지 않습니다.` };
+  return { value: v };
 }
 
 /** 일시(KST datetime-local): 비어 있으면 required 여부에 따라 now 또는 오류. 미래 시각 불가 */

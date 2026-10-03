@@ -9,6 +9,7 @@ import { newRequestId } from "@/lib/request-id";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import PickSelect from "./PickSelect";
 export type OutboundProductOption = {
   id: string;
   sku: string;
@@ -167,6 +168,12 @@ export default function OutboundForm({
           </label>
         )}
       </div>
+
+      <label className="text-sm">
+        출고 위치
+        <PickSelect key={productId} productId={productId} quantity={qty} baseUnit={selected?.baseUnit} />
+        {err.pick && <span className={errText}>{err.pick}</span>}
+      </label>
 
       <div className="flex gap-4">
         <label className="flex-1 text-sm">

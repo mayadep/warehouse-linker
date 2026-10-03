@@ -1,11 +1,13 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { toKstDateTimeLocal } from "@/lib/datetime";
+import { dateOnlyToDb, dbToDateOnly, toKstDateTimeLocal } from "@/lib/datetime";
 import {
+  BucketStockError,
   changeStock,
   InsufficientStockError,
   isUniqueViolation,
   SIMILAR_WINDOW_MS,
+  type StockBucket,
 } from "@/modules/stock/service";
 import type { OutboundConfirmInput, OutboundCreateInput, OutboundUpdateInput, OutboundVoidInput } from "./validation";
 import type { CurrentUser } from "@/modules/user/auth";
@@ -40,6 +42,33 @@ const insufficient = (e: InsufficientStockError, what: string) =>
     `재고가 부족해 ${what}할 수 없습니다. (현재고 ${e.currentStock.toLocaleString()}, 출고 요청 ${e.requested.toLocaleString()})`
   );
 
+/** 출고 위치 지정값 → Outbound 컬럼 (null = 자동) */
+const pickData = (pick: StockBucket | null) => ({
+  pickFixed: pick !== null,
+  pickLocationId: pick?.locationId ?? null,
+  pickExpiryDate: pick?.expiryDate ? dateOnlyToDb(pick.expiryDate) : null,
+});
+
+/** Outbound 컬럼 → 출고 위치 지정값 */
+const pickOf = (o: { pickFixed: boolean; pickLocationId: string | null; pickExpiryDate: Date | null }): StockBucket | null =>
+  o.pickFixed ? { locationId: o.pickLocationId, expiryDate: o.pickExpiryDate ? dbToDateOnly(o.pickExpiryDate) : null } : null;
+
+/** 대기 출고 등록 시: 지정한 칸에 지금 수량이 있는지 (예약은 하지 않음, 확정 때 다시 확인) */
+async function assertPickAvailable(tx: Prisma.TransactionClient, productId: string, pick: StockBucket, quantity: number) {
+  const b = await tx.stockBalance.findFirst({
+    where: {
+      productId,
+      locationId: pick.locationId,
+      expiryDate: pick.expiryDate ? dateOnlyToDb(pick.expiryDate) : null,
+    },
+    select: { quantity: true, location: { select: { code: true } } },
+  });
+  if (!b || b.quantity < quantity) {
+    const code = b?.location?.code ?? (pick.locationId ? (await tx.location.findUnique({ where: { id: pick.locationId }, select: { code: true } }))?.code : null);
+    throw new OutboundError(new BucketStockError(code ?? "미지정", pick.expiryDate, b?.quantity ?? 0, quantity).message);
+  }
+}
+
 /**
  * 출고 등록 (단일 트랜잭션)
  * 1) 같은 요청 확인  2) 상품 확인(확정 상품만)  3) 출고 기록 생성
@@ -67,6 +96,7 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
           `재고가 부족해 출고를 등록할 수 없습니다. (현재고 ${product.stock.toLocaleString()}, 출고 요청 ${input.quantity.toLocaleString()})`
         );
       }
+      if (!confirmed && input.pick) await assertPickAvailable(tx, input.productId, input.pick, input.quantity);
 
       const unitPrice = confirmed ? input.unitPrice : null;
       const outbound = await tx.outbound.create({
@@ -77,6 +107,7 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
           customer: input.customer,
           memo: input.memo,
           shippedAt: input.shippedAt,
+          ...pickData(input.pick),
           requestId: input.requestId,
           status: confirmed ? "CONFIRMED" : "PENDING",
           createdById: actor.id,
@@ -93,10 +124,13 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
             delta: -input.quantity,
             type: "OUTBOUND",
             outboundId: outbound.id,
+            bucket: input.pick ?? undefined,
+            strict: input.pick !== null,
           });
           afterStock = r.afterStock;
         } catch (e) {
           if (e instanceof InsufficientStockError) throw insufficient(e, "출고");
+          if (e instanceof BucketStockError) throw new OutboundError(e.message);
           throw e;
         }
       }
@@ -137,11 +171,13 @@ export async function confirmOutbound(input: OutboundConfirmInput, actor: Curren
     if (!cur) throw new OutboundError("존재하지 않는 출고 건입니다.");
     if (cur.status !== "PENDING") throw new OutboundError("확정 대기 중인 출고만 확정할 수 있습니다.");
 
+    // 출고 위치: 확정할 때 관리자가 고른 값(등록 때 지정값이 기본으로 채워짐)
     const r0 = await tx.outbound.updateMany({
       where: { id: cur.id, status: "PENDING", version: input.version },
       data: {
         status: "CONFIRMED",
         unitPrice: input.unitPrice,
+        ...pickData(input.pick),
         confirmedById: actor.id,
         confirmedAt: new Date(),
         version: { increment: 1 },
@@ -151,10 +187,18 @@ export async function confirmOutbound(input: OutboundConfirmInput, actor: Curren
 
     let afterStock: number;
     try {
-      const r = await changeStock(tx, { productId: cur.productId, delta: -cur.quantity, type: "OUTBOUND", outboundId: cur.id });
+      const r = await changeStock(tx, {
+        productId: cur.productId,
+        delta: -cur.quantity,
+        type: "OUTBOUND",
+        outboundId: cur.id,
+        bucket: input.pick ?? undefined,
+        strict: input.pick !== null,
+      });
       afterStock = r.afterStock;
     } catch (e) {
       if (e instanceof InsufficientStockError) throw insufficient(e, "출고 확정");
+      if (e instanceof BucketStockError) throw new OutboundError(e.message);
       throw e;
     }
 
@@ -349,11 +393,15 @@ export async function updateOutbound(input: OutboundUpdateInput) {
 
     if (qtyDelta !== 0 && affectsStock) {
       try {
+        // 출고 위치를 지정한 출고는 늘어난 수량도 그 칸에서만
+        const pick = qtyDelta > 0 ? pickOf(cur) : null;
         const r = await changeStock(tx, {
           productId: cur.productId,
           delta: -qtyDelta, // 출고가 늘면 재고 감소
           type: "OUTBOUND_CORRECTION",
           outboundId: cur.id,
+          bucket: pick ?? undefined,
+          strict: pick !== null,
         });
         stockMovementId = r.movement.id;
         afterStock = r.afterStock;
@@ -363,6 +411,7 @@ export async function updateOutbound(input: OutboundUpdateInput) {
             `재고가 부족해 출고 수량을 늘릴 수 없습니다. (현재고 ${e.currentStock.toLocaleString()}, 추가 출고 ${e.requested.toLocaleString()})`
           );
         }
+        if (e instanceof BucketStockError) throw new OutboundError(e.message);
         throw e;
       }
       // 수주에서 출고된 건이면 수주 품목의 출고 수량도 함께 조정
@@ -438,10 +487,11 @@ const recentOutboundInclude = {
   product: { select: { sku: true, name: true, baseUnit: true, stock: true, price: true } },
   createdBy: { select: { name: true } },
   dispatchItem: { select: { dispatch: { select: { dispatchNo: true } } } },
+  pickLocation: { select: { code: true } },
+  // 원출고 시점의 재고 변동 (여러 칸에서 나갔으면 칸마다 1건 → 화면에서 합침)
   stockMovements: {
     where: { type: "OUTBOUND" },
     select: { beforeStock: true, afterStock: true },
-    take: 1,
   },
   revisions: {
     orderBy: { createdAt: "desc" },

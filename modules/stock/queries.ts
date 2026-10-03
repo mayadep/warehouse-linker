@@ -181,7 +181,7 @@ export async function listStockStatus(filter: StockFilter) {
 
 /** 상품별 재고원장 (최근 limit 건, 최신순) */
 export async function getStockLedger(productId: string, limit = 50) {
-  const [product, total, movements] = await Promise.all([
+  const [product, total, movements, balances] = await Promise.all([
     prisma.product.findUnique({
       where: { id: productId },
       select: { id: true, sku: true, name: true, baseUnit: true, stock: true, safetyStock: true },
@@ -196,9 +196,20 @@ export async function getStockLedger(productId: string, limit = 50) {
         outbound: { select: { customer: true, shippedAt: true, memo: true, cancelReason: true } },
         inboundRevision: { select: { reason: true } },
         outboundRevision: { select: { reason: true } },
+        location: { select: { code: true } },
       },
     }),
+    listProductBalances(productId),
   ]);
   if (!product) return null;
-  return { product, total, movements };
+  return { product, total, movements, balances };
+}
+
+/** 상품의 칸별 재고: 유통기한 미상 → 빠른 순 (자동 출고 순서와 같음) */
+export async function listProductBalances(productId: string) {
+  return prisma.stockBalance.findMany({
+    where: { productId },
+    orderBy: [{ expiryDate: { sort: "asc", nulls: "first" } }, { location: { code: "asc" } }],
+    select: { locationId: true, expiryDate: true, quantity: true, location: { select: { code: true } } },
+  });
 }

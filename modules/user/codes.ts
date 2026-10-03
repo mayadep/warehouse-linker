@@ -47,5 +47,11 @@ export const USER_LIMITS = {
   maxName: 50,
 } as const;
 
+/** 로그인 시도 제한: 같은 아이디 연속 실패 maxFails 회 → lockMinutes 분 차단 */
+export const LOGIN_LIMITS = {
+  maxFails: 5,
+  lockMinutes: 15,
+} as const;
+
 /** 로그인 아이디: 소문자·숫자·._- 3~30자 (DB CHECK 와 동일) */
 export const LOGIN_ID_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;

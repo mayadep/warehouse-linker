@@ -162,7 +162,21 @@ export default function InboundForm({
         {err.receivedAt && <span className="mt-1 block text-xs text-red-600">{err.receivedAt}</span>}
       </label>
 
-      <label className="col-span-3 text-sm">
+      <label className="text-sm">
+        유통기한 (선택)
+        <Input name="expiryDate" type="date" className={input} />
+        {err.expiryDate && <span className="mt-1 block text-xs text-red-600">{err.expiryDate}</span>}
+      </label>
+      <label className="text-sm">
+        보관 위치 (비우면 기본 위치)
+        <Input
+          name="locationCode"
+          maxLength={30}
+          className={`${input} uppercase`}
+          placeholder={selected ? (selected.location?.code ?? "기본 위치 없음 → 미지정") : "예: RF1-R01-2-3"} />
+        {err.locationCode && <span className="mt-1 block text-xs text-red-600">{err.locationCode}</span>}
+      </label>
+      <label className="text-sm">
         비고 (선택)
         <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className="mt-1 block text-xs text-red-600">{err.memo}</span>}

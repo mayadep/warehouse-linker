@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { INT_RE, UUID_RE, text } from "@/lib/form";
+import { INT_RE, UUID_RE, parseOptionalDate, text } from "@/lib/form";
+import { dbToDateOnly } from "@/lib/datetime";
 import { prisma } from "@/lib/prisma";
 import { getStockLedger } from "./queries";
+import { changeStockExpiry, moveStock, StockBucketError } from "./service";
+import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { getLocationHistory } from "@/modules/warehouse/location";
 import { recordAudit } from "@/modules/audit/service";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
@@ -53,6 +56,124 @@ export async function updateSafetyStockAction(
   return { status: "success", message: `안전재고를 ${safetyStock.toLocaleString()}(으)로 저장했습니다.`, ts: Date.now() };
 }
 
+/**
+ * 유통기한 입력·변경 (관리자): 한 칸의 재고 일부/전부에 유통기한을 지정. 총재고는 그대로
+ * 폼: productId, locationId(""=미지정), fromExpiry(""=미상), toExpiry(필수), quantity
+ */
+export async function changeStockExpiryAction(
+  _prev: SafetyStockActionState,
+  fd: FormData
+): Promise<SafetyStockActionState> {
+  const fail = (message: string) => ({ status: "error" as const, message, ts: Date.now() });
+  if (!(await authorize("admin"))) return fail(NO_PERMISSION_MESSAGE);
+
+  const productId = text(fd, "productId");
+  const locationId = text(fd, "locationId") || null;
+  if (!UUID_RE.test(productId) || (locationId && !UUID_RE.test(locationId))) return fail("잘못된 요청입니다.");
+  const from = parseOptionalDate(fd, "fromExpiry", "현재 유통기한");
+  const to = parseOptionalDate(fd, "toExpiry", "유통기한");
+  if (from.error) return fail("잘못된 요청입니다.");
+  if (to.error) return fail(to.error);
+  if (!to.value) return fail("유통기한을 입력하세요.");
+  const rawQty = text(fd, "quantity").replaceAll(",", "");
+  if (!INT_RE.test(rawQty) || Number(rawQty) < 1) return fail("수량은 1 이상의 정수여야 합니다.");
+  const quantity = Number(rawQty);
+  if (quantity > MAX_SAFETY_STOCK) return fail("수량이 너무 큽니다.");
+  const toExpiry = to.value;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const r = await changeStockExpiry(tx, {
+        productId,
+        from: { locationId, expiryDate: from.value },
+        toExpiryDate: toExpiry,
+        quantity,
+      });
+      const loc = locationId
+        ? await tx.location.findUnique({ where: { id: locationId }, select: { code: true } })
+        : null;
+      const where = loc?.code ?? "미지정 위치";
+      await recordAudit(tx, {
+        category: "STOCK",
+        action: "STOCK_EXPIRY_CHANGE",
+        targetId: productId,
+        targetLabel: r.productName,
+        summary: `${r.productName} ${where} ${quantity.toLocaleString()}개 유통기한 ${from.value ?? "미상"} → ${toExpiry}`,
+        detail: { location: where, quantity, before: { expiryDate: from.value ?? "미상" }, after: { expiryDate: toExpiry } },
+      });
+    });
+  } catch (e) {
+    if (e instanceof StockBucketError) return fail(e.message);
+    console.error("[stock] expiry change failed", e);
+    return fail("처리 중 오류가 발생했습니다. 다시 시도하세요.");
+  }
+
+  revalidatePath("/stock");
+  return { status: "success", message: `${quantity.toLocaleString()}개의 유통기한을 ${toExpiry}(으)로 저장했습니다.`, ts: Date.now() };
+}
+
+/**
+ * 재고 위치 이동 (관리자): 한 칸의 재고 일부/전부를 다른 위치로. 유통기한·총재고는 그대로
+ * 폼: productId, locationId(""=미지정), expiryDate(""=미상), toLocationCode(필수), quantity
+ */
+export async function moveStockAction(
+  _prev: SafetyStockActionState,
+  fd: FormData
+): Promise<SafetyStockActionState> {
+  const fail = (message: string) => ({ status: "error" as const, message, ts: Date.now() });
+  if (!(await authorize("admin"))) return fail(NO_PERMISSION_MESSAGE);
+
+  const productId = text(fd, "productId");
+  const locationId = text(fd, "locationId") || null;
+  if (!UUID_RE.test(productId) || (locationId && !UUID_RE.test(locationId))) return fail("잘못된 요청입니다.");
+  const expiry = parseOptionalDate(fd, "expiryDate", "유통기한");
+  if (expiry.error) return fail("잘못된 요청입니다.");
+  const toCode = text(fd, "toLocationCode").toUpperCase();
+  if (!toCode) return fail("옮길 위치코드를 입력하세요.");
+  if (!LOCATION_CODE_RE.test(toCode)) return fail("위치코드 형식이 올바르지 않습니다. (예: RF1-R01-2-3)");
+  const rawQty = text(fd, "quantity").replaceAll(",", "");
+  if (!INT_RE.test(rawQty) || Number(rawQty) < 1) return fail("수량은 1 이상의 정수여야 합니다.");
+  const quantity = Number(rawQty);
+  if (quantity > MAX_SAFETY_STOCK) return fail("수량이 너무 큽니다.");
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const to = await tx.location.findUnique({ where: { code: toCode }, select: { id: true } });
+      if (!to) throw new StockBucketError(`존재하지 않는 위치코드입니다: ${toCode}`);
+      const r = await moveStock(tx, {
+        productId,
+        from: { locationId, expiryDate: expiry.value },
+        toLocationId: to.id,
+        quantity,
+      });
+      const fromLoc = locationId
+        ? await tx.location.findUnique({ where: { id: locationId }, select: { code: true } })
+        : null;
+      const fromCode = fromLoc?.code ?? "미지정";
+      await recordAudit(tx, {
+        category: "STOCK",
+        action: "STOCK_MOVE",
+        targetId: productId,
+        targetLabel: r.productName,
+        summary: `${r.productName} ${quantity.toLocaleString()}개 위치 이동 ${fromCode} → ${toCode}`,
+        detail: {
+          quantity,
+          expiryDate: expiry.value ?? "미상",
+          before: { location: fromCode },
+          after: { location: toCode },
+        },
+      });
+    });
+  } catch (e) {
+    if (e instanceof StockBucketError) return fail(e.message);
+    console.error("[stock] move failed", e);
+    return fail("처리 중 오류가 발생했습니다. 다시 시도하세요.");
+  }
+
+  revalidatePath("/stock");
+  return { status: "success", message: `${quantity.toLocaleString()}개를 ${toCode}(으)로 옮겼습니다.`, ts: Date.now() };
+}
+
 const dateFmt = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
   year: "2-digit",
@@ -71,6 +192,8 @@ const TYPE_LABELS: Record<string, string> = {
   OUTBOUND_CORRECTION: "출고정정",
   INBOUND_CANCEL: "입고취소",
   OUTBOUND_CANCEL: "출고취소",
+  EXPIRY_CHANGE: "유통기한 변경",
+  MOVE: "위치 이동",
 };
 
 export type LedgerEntry = {
@@ -82,8 +205,18 @@ export type LedgerEntry = {
   quantity: number;
   beforeStock: number;
   afterStock: number;
+  locationCode: string | null; // 변동된 칸 (null = 미지정)
+  expiryDate: string | null; // 변동된 칸의 유통기한 (null = 미상)
   partner: string | null; // 공급처/출고처
   note: string | null; // 수정 사유 또는 비고
+};
+
+/** 칸별 재고 1행 */
+export type BalanceEntry = {
+  locationId: string | null;
+  locationCode: string | null;
+  expiryDate: string | null;
+  quantity: number;
 };
 
 export type LocationHistoryEntry = {
@@ -96,7 +229,13 @@ export type LocationHistoryEntry = {
 };
 
 export type LedgerResult =
-  | { ok: true; total: number; entries: LedgerEntry[]; locationHistory: LocationHistoryEntry[] }
+  | {
+      ok: true;
+      total: number;
+      entries: LedgerEntry[];
+      balances: BalanceEntry[];
+      locationHistory: LocationHistoryEntry[];
+    }
   | { ok: false; message: string };
 
 /** 재고원장 조회 (팝업에서 호출) */
@@ -111,6 +250,12 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
   return {
     ok: true,
     total: data.total,
+    balances: data.balances.map((b) => ({
+      locationId: b.locationId,
+      locationCode: b.location?.code ?? null,
+      expiryDate: b.expiryDate ? dbToDateOnly(b.expiryDate) : null,
+      quantity: b.quantity,
+    })),
     locationHistory: locHist.map((h) => ({
       id: h.id,
       createdAtText: dateFmt.format(h.createdAt),
@@ -132,6 +277,8 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
         quantity: m.quantity,
         beforeStock: m.beforeStock,
         afterStock: m.afterStock,
+        locationCode: m.location?.code ?? null,
+        expiryDate: m.expiryDate ? dbToDateOnly(m.expiryDate) : null,
         partner: m.inbound?.supplier ?? m.outbound?.customer ?? null,
         note:
           m.type === "INBOUND_CANCEL" || m.type === "OUTBOUND_CANCEL"

@@ -3,14 +3,26 @@
 ## 데이터 모델
 - `Product`: sku(unique), name, category, price, stock(**DB CHECK >= 0**), baseUnit(enum ProductUnit), boxQty(≥1 CHECK), trackExpiry, safetyStock(DB 기본 0, 상품등록 화면에서 입력, 비우면 기본 5 `modules/product/defaults.ts`·시드도 5, CHECK >= 0), locationId?(기본 보관위치, **unique = 한 칸에 한 상품**, onDelete SetNull). 인덱스 (category, sku), (stock)
 - `Inbound`: productId, quantity>0 CHECK, unitCost?, supplier?, memo?, receivedAt, version, requestId?(unique), updatedAt
-- `Outbound`: productId, quantity>0 CHECK, unitPrice?(기본 판매가), customer?(출고처), memo?, shippedAt, version, requestId?(unique), updatedAt
-- `StockMovement`: 모든 재고 변경 이력. type INBOUND/OUTBOUND/ADJUST/INBOUND_CORRECTION/OUTBOUND_CORRECTION/INBOUND_CANCEL/OUTBOUND_CANCEL, quantity ±, before/afterStock, inboundId?, outboundId?
+- `Outbound`: productId, quantity>0 CHECK, unitPrice?(기본 판매가), customer?(출고처), memo?, shippedAt, version, requestId?(unique), updatedAt, 출고 위치 지정 `pickFixed`(false=자동)·`pickLocationId?`·`pickExpiryDate?`
+- `StockMovement`: 모든 재고 변경 이력. type INBOUND/OUTBOUND/ADJUST/INBOUND_CORRECTION/OUTBOUND_CORRECTION/INBOUND_CANCEL/OUTBOUND_CANCEL/EXPIRY_CHANGE/MOVE, quantity ±, before/afterStock, inboundId?, outboundId?, locationId?·expiryDate?(변동된 칸, null = 미지정·미상). 여러 칸에 걸치면 칸마다 1건
+- `StockBalance` (2026-10-03): 칸별 재고 = 상품 × 위치(null 미지정) × 유통기한(DATE, null 미상), quantity CHECK > 0(0이면 행 삭제), unique(productId, locationId, expiryDate) **NULLS NOT DISTINCT**(PG15+, SQL 수기). `Inbound.locationId?`(넣을 위치, 비우면 확정 시점 기본 보관위치)·`expiryDate?`
+- 불변식(칸): Product.stock == Σ StockBalance.quantity, 칸마다 Σ StockMovement.quantity(같은 칸) == 칸 수량
 - `InboundRevision` / `OutboundRevision`: 수정 기록 (reason 필수, before/after JSON 바뀐 항목만, quantityDelta, stockMovementId? unique)
 - 불변식: `Product.stock` == StockMovement.quantity 합계, 항상 >= 0
-- 마이그레이션: `20261001120000_add_inbound`, `20261001130000_product_unit_fields`, `20261001140000_inbound_edit`, `20261001150000_outbound`, `20261001160000_safety_stock`, `20261001170000_product_stock_indexes`, `20261001180000_warehouse`, `20261001190000_product_location`, `20261001200000_product_location_history`, `20261002090000_orders_dispatch`, `20261002120000_audit_log`, `20261002121346_users_roles`, `20261002123842_outbound_status` (SQL 수기 작성, CHECK 제약은 수동 추가분)
+- 마이그레이션: `20261001120000_add_inbound`, `20261001130000_product_unit_fields`, `20261001140000_inbound_edit`, `20261001150000_outbound`, `20261001160000_safety_stock`, `20261001170000_product_stock_indexes`, `20261001180000_warehouse`, `20261001190000_product_location`, `20261001200000_product_location_history`, `20261002090000_orders_dispatch`, `20261002120000_audit_log`, `20261002121346_users_roles`, `20261002123842_outbound_status`, `20261003063758_login_throttle`, `20261003104150_stock_balance`(기존 재고·이력을 상품 기본 보관위치·유통기한 미상 칸으로 이관), `20261003121427_stock_move`, `20261003122342_outbound_pick` (SQL 수기 작성, CHECK 제약은 수동 추가분)
 
 ## 공통 (modules/stock, lib)
 - `modules/stock/service.ts` `changeStock(tx, {productId, delta, type, inboundId?, outboundId?})`: 모든 재고 증감은 이 함수로. 차감은 `updateMany where stock >= 차감량` 조건부 → 동시 요청에도 음수 불가, 부족 시 `InsufficientStockError(currentStock, requested)`. 이력 자동 기록. 반드시 호출자 트랜잭션 안에서.
+  - 칸별 재고도 함께 변경(상품 행 잠금 상태에서). 옵션 `bucket {locationId, expiryDate}` = 늘릴 때 넣을 칸 / 줄일 때 먼저 뺄 칸
+  - 늘림: 출고 취소·출고 수량 감소(outboundId)면 그 출고가 뺐던 칸으로(나중에 뺀 칸부터) → bucket → 입고 정정(inboundId)이면 그 입고의 칸 → 상품 기본 보관위치·유통기한 미상
+  - 줄임: bucket → 입고 취소·입고 수량 감소(inboundId)면 그 입고가 넣은 칸 먼저 → (그 칸이 비었으면) 같은 유통기한 칸(위치 이동된 재고) → 자동 순서 **유통기한 미상 → 빠른 순 → 기본 보관위치 먼저**
+  - 호출부(입고·출고·수발주)는 bucket 만 넘기면 되고 되돌리기 규칙은 changeStock 이 처리
+  - `strict: true` + bucket: 그 칸에서만 차감, 모자라면 `BucketStockError`("선택한 위치의 재고가 부족합니다. (코드 · 유통기한: 현재 X, 필요 Y)")
+  - 순서: 상품 행 FOR UPDATE → 총재고·칸 확인(실패 시 아무것도 안 바뀜) → 총재고 반영(조건부 UPDATE) → 칸별 재고·이력
+- `changeStockExpiry`: 한 칸의 일부/전부를 다른 유통기한으로 (EXPIRY_CHANGE -n/+n, 총재고 불변). 재고현황 원장 팝업 [유통기한 입력/변경](관리자, `changeStockExpiryAction`, 감사 로그 STOCK_EXPIRY_CHANGE) — 입고 때 비워 둔 유통기한을 나중에 입력하는 경로
+- `moveStock`: 한 칸의 일부/전부를 다른 위치로 (유통기한 유지, MOVE -n/+n, 총재고 불변). 같은 칸·칸 재고 초과는 거부. 유통기한 변경과 같은 `transferBucket` 사용. 원장 팝업 [위치 이동](관리자, 위치코드 입력, `moveStockAction`, 감사 로그 STOCK_MOVE). 위치코드 형식 `LOCATION_CODE_RE`(modules/warehouse/codes.ts, 입고와 공용)
+- 입고 폼: 유통기한(선택), 보관 위치코드(선택, 서버에서 존재 확인). 발주 입고 처리는 기본 위치·유통기한 미상
+- 출고 위치 지정(2026-10-03): 출고 폼·확정 모달 "출고 위치" 선택(`app/outbound/PickSelect.tsx`, 칸 목록 `getPickOptionsAction` — outbound.create 권한, `listProductBalances`). 기본 "자동"(유통기한 미상 → 빠른 순), 칸을 고르면 그 칸에서만(strict). 직원 대기 등록도 그 칸 수량을 미리 확인(예약 없음), 확정 모달에 등록 때 지정값이 기본으로 채워지고 관리자가 바꿀 수 있음(확정 시 Outbound.pick* 갱신). 지정 출고의 수량 증가 정정도 그 칸에서만. 취소·감소는 뺐던 칸으로 복원. 수주 출고 처리는 자동
 - `modules/stock/queries.ts` (재고현황은 **전부 DB 처리**):
   - `stockStatus`(0 → OUT, safetyStock>0 && stock ≤ safetyStock → LOW, else OK) — `statusWhere`가 같은 규칙을 Prisma where로 (LOW는 `prisma.product.fields.safetyStock` 컬럼 비교)
   - `parseStockFilter`(q, category, status all/short/low/out, sort sku/stock/name, page 화이트리스트·범위 검증)
@@ -21,7 +33,7 @@
 - `isUniqueViolation(e, field)`, `SIMILAR_WINDOW_MS`(10분)
 - `lib/form.ts` 폼 필드 공통 파서, `lib/datetime.ts` KST 변환 (`modules/inbound/datetime.ts`는 호환용 re-export, 삭제 가능), `lib/request-id.ts` 요청키 생성
 
-## 창고 (modules/warehouse) — 구조만, 재고는 아직 상품 단위
+## 창고 (modules/warehouse) — 재고는 칸별(StockBalance), 기본 보관위치는 상품당 1칸
 - 모델: `Warehouse`(code unique, name, storageType enum REFRIGERATED/FROZEN/AMBIENT, memo), `Rack`(warehouseId, number unique per 창고 1~999 CHECK, levels 1~20, binsPerLevel 1~50), `Location`(warehouseId, rackId, level, bin, code unique `RF1-R01-2-3`, unique(rackId, level, bin))
 - 코드 규칙 `codes.ts`: 접두어 RF/FZ/AM + 번호, `nextWarehouseCode`, `defaultWarehouseName`, `rackCode`(R01, R100), `locationCode`. 창고코드는 영문 대문자 시작·영문숫자 2~10자(하이픈 불가 → 위치코드 충돌 없음)
 - `builder.ts` `createRacksWithLocations(tx, wh, {startNumber, count, levels, binsPerLevel})`: id 미리 생성 후 createMany 일괄 삽입. `seedDefaultWarehouses`(RF1·RF2·FZ1·FZ2·AM1·AM2, 랙 50×4단×6구획 = 7,200칸, 있는 코드는 건너뜀). seed.ts에서 호출
@@ -29,7 +41,8 @@
 - 화면: `/warehouses` 카드 목록 + [창고 추가] 모달(유형 선택 시 코드·이름 자동 제안, 생성 미리보기), `/warehouses/[id]` 랙 목록 + [랙 추가] 모달 + 랙 배치도 모달(위가 높은 단). 공용 `components/Modal.tsx`. 사이드바는 하위 경로도 강조
 - 보관위치 자동 배정 `assign.ts` `assignRandomLocations`: locationId 없는 상품만, 분류→유형(냉동식품→FROZEN, 유제품→REFRIGERATED, 그 외 AMBIENT, `CATEGORY_STORAGE`), `pg_advisory_xact_lock`으로 동시 실행 직렬화, 빈 칸 `ORDER BY random()`, 빈 칸 부족 시 남은 상품은 미배정으로 보고. 창고관리 화면 [위치 자동 배정] 버튼(확인 후 실행). 표시: 창고 카드 배정 칸·비율, 랙 목록 배정 수, 배치도 칸에 상품명, 재고현황 '위치' 칸, 입출고 폼 상품 선택 시 위치
 - 보관위치 직접 변경 `location.ts` `changeProductLocation`: 재고현황 원장 팝업의 `LocationEditor`(창고→랙→단→구획 선택, 랙은 `getRacksForPickerAction`으로 해당 창고만 로드, 구획 옵션에 배정 상품 표시). 자동배정과 같은 advisory lock. expectedLocationId 불일치 → 거부. 대상 칸 점유 시 교환(나 해제 → 상대를 내 원래 자리(없으면 해제) → 나 목표), 분류/창고유형 불일치(교환 상대 포함)는 경고. 경고가 있으면 status "confirm" 반환(변경 없음) → mode=set-confirmed + expectedOccupantId 일치 시에만 진행. 클라이언트는 확인받은 targetCode와 현재 선택이 같을 때만 [확인하고 변경] 표시. 해제(mode=clear) 지원. 이력 `ProductLocationHistory`(fromCode, toCode, swappedWithSku, reason) — 교환 시 양쪽 기록, 팝업에 최근 5건
-- 다음 단계 후보: 구획별 재고(입고 위치 지정, 출고 위치 차감, 위치 이동), 상품 보관유형과 창고 유형 매칭, 랙/창고 비활성화
+- 기본 보관위치(`Product.locationId`, 한 칸에 한 상품)는 "원래 자리" 의미로 유지. 실제 재고는 어느 칸이든 여러 상품 가능
+- 구획별 재고 1단계 완료(2026-10-03). 2단계: ~~위치 이동(MOVE)~~ 완료, ~~출고 위치 직접 지정~~ 완료, 보관 온도 검사, 배치도 칸 수량, 헤더 창고 선택 / 3단계: 유통기한 임박·만료 알림, 칸 단위 실사. 그 외: 랙/창고 비활성화
 
 ## 수발주 (modules/order) — 2026-10-02
 - 모델: `TradeOrder`(type PURCHASE/SALES, orderNo PO-/SO-YYYYMMDD-NNN unique, partner, status OPEN/PARTIAL/DONE/CLOSED/CANCELLED, dueDate KST 자정, memo, version, requestId unique), `TradeOrderLine`(seq, productId unique per order, quantity>0, unitPrice?, processedQty CHECK 0~quantity). `Inbound.orderLineId?`, `Outbound.orderLineId?`
@@ -55,8 +68,9 @@
   - 관리자: 위 + `product.confirm`(확정·반려), `inbound.manage`·`outbound.manage`(확정·수정·취소·대기 삭제), `price.view`, `admin`(발주·수주, 배차·차량, 창고, 안전재고·위치 변경, 로그, 사용자)
 - 금액 숨김은 서버에서 값을 내려주지 않는 방식(상품 판매가, 입고 단가·수정 기록의 단가, 재고현황 판매가·재고금액·요약 카드)
 - 관리자 화면 `/users`: 사용자 추가, 이름·역할·사용 여부 수정(version), 비밀번호 재설정(기존 세션 종료). 본인 역할·사용 여부 변경 불가, 활성 관리자 최소 1명 유지(advisory lock). 역할 변경·중지 시 해당 사용자 세션 삭제
+- 로그인 시도 제한 (2026-10-03, 마이그레이션 `20261003063758_login_throttle`): `LoginThrottle`(loginId PK, failCount CHECK >= 0, lockedUntil). 같은 아이디 연속 `LOGIN_LIMITS.maxFails`(5)회 실패 → `lockMinutes`(15)분 차단, 잠금 중엔 비밀번호를 비교하지 않음. 없는 아이디도 똑같이 세고 잠금(존재 여부 노출 방지). 실패 기록은 아이디별 advisory lock으로 직렬화, 잠금이 끝난 기록은 1부터 다시 셈. 성공·관리자 재설정·본인 변경 시 기록 삭제. 잠기는 순간 감사 로그 `LOGIN_LOCKED`(잠긴 동안의 시도는 기록 안 함). IP 기준 제한은 없음
+- 본인 비밀번호 변경: 헤더 사용자 메뉴 [비밀번호 변경] 모달(`components/PasswordChangeModal.tsx`). 로그인 사용자 누구나(`changeOwnPasswordAction`, 권한표 항목 없음). 현재 비밀번호 확인(틀리면 로그인 시도 제한에 포함) + 새 비밀번호 규칙·확인 일치·현재와 다름. 현재 세션만 남기고 다른 세션 삭제, 감사 로그 `USER_PASSWORD_CHANGE`
 - 시드 기본 계정: `admin`/`admin1234`(관리자), `staff`/`staff1234`(직원) — 운영 전 반드시 변경
-- 미구현: 로그인 시도 횟수 제한, 본인 비밀번호 변경 화면
 
 ## 상품 확정 · 입고 확정/취소 — 2026-10-02
 - `Product.status` PENDING/ACTIVE(기존 데이터 ACTIVE), createdBy/confirmedBy/confirmedAt. 직원 등록 = PENDING(price 0) → 관리자 확정(판매가 입력) 또는 반려(대기 상품만 실제 삭제, 사유는 감사 로그). 관리자 등록은 바로 ACTIVE

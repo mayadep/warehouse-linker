@@ -8,6 +8,7 @@ import {
   type OutboundReviewState,
 } from "@/modules/outbound/actions";
 import type { OutboundRow } from "./OutboundTable";
+import PickSelect from "./PickSelect";
 import Modal from "@/components/Modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,18 @@ export default function OutboundReviewDialog({
           )}
         </dl>
 
+        {kind === "confirm" && (
+          <label className="text-sm">
+            출고 위치
+            <PickSelect
+              productId={row.productId}
+              quantity={row.quantity}
+              baseUnit={row.baseUnit}
+              defaultValue={row.pickValue}
+              defaultLabel={row.pickLabel ?? undefined}
+            />
+          </label>
+        )}
         {kind === "confirm" ? (
           <label className="text-sm">
             출고단가 (원, 선택)
