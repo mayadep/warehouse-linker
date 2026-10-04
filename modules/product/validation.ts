@@ -132,3 +132,93 @@ export function parseProductForm(fd: FormData): ProductParseResult {
     data: { sku, name, category, price, baseUnit, boxQty, safetyStock, trackExpiry },
   };
 }
+
+/**
+ * 수정 화면이 열린 시점의 값 스냅샷. 재고 변동(updatedAt)과 무관하게 '수정 대상 값'이 그대로일 때만 저장되도록 한다.
+ */
+export function productVersion(p: { name: string; category: string; price: number; boxQty: number; safetyStock: number; status: string }) {
+  return [p.status, p.name, p.category, p.price, p.boxQty, p.safetyStock].join("\u001f");
+}
+
+export type ProductUpdateInput = {
+  productId: string;
+  /** 조회 시점의 수정 대상 값 스냅샷(`productVersion`) — 동시 수정 방지 */
+  version: string;
+  name: string;
+  category: string;
+  price: number;
+  boxQty: number;
+  safetyStock: number;
+};
+
+export type ProductUpdateFieldErrors = Partial<Record<"name" | "category" | "price" | "boxQty" | "safetyStock", string>>;
+
+/**
+ * 상품 수정 입력. 품목코드·기본단위·유통기한 관리는 입출고 이력의 의미가 바뀌므로 수정 대상이 아니다.
+ * 박스당 입수는 BOX 단위 상품이면 서버에서 1로 고정(여기서는 값이 없으면 현재값 유지를 위해 서비스에서 처리).
+ */
+export function parseProductUpdateForm(
+  fd: FormData
+):
+  | { ok: true; data: ProductUpdateInput; hasBoxQty: boolean }
+  | { ok: false; message: string; errors?: ProductUpdateFieldErrors } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const version = text(fd, "version");
+  if (!version || version.length > 500) return { ok: false, message: "잘못된 요청입니다. 새로고침 후 다시 시도하세요." };
+
+  const errors: ProductUpdateFieldErrors = {};
+
+  const name = text(fd, "name");
+  if (!name) errors.name = "품명을 입력하세요.";
+  else if (name.length > PRODUCT_LIMITS.maxNameLength) errors.name = `품명은 ${PRODUCT_LIMITS.maxNameLength}자 이내로 입력하세요.`;
+
+  const category = text(fd, "category");
+  if (!category) errors.category = "분류를 입력하세요.";
+  else if (category.length > PRODUCT_LIMITS.maxCategoryLength)
+    errors.category = `분류는 ${PRODUCT_LIMITS.maxCategoryLength}자 이내로 입력하세요.`;
+
+  // 판매가: 확정 대기 상품은 화면에서 입력받지 않음(서비스에서 무시)
+  const priceRaw = text(fd, "price").replaceAll(",", "");
+  let price = 0;
+  if (priceRaw) {
+    if (!INT_RE.test(priceRaw)) errors.price = "판매가는 0 이상의 정수여야 합니다.";
+    else {
+      price = Number(priceRaw);
+      if (price > PRODUCT_LIMITS.maxPrice) errors.price = "판매가가 너무 큽니다.";
+    }
+  }
+
+  // 박스당 입수: BOX 단위 상품은 화면에서 입력받지 않음(서비스에서 무시)
+  const qtyRaw = text(fd, "boxQty").replaceAll(",", "");
+  const hasBoxQty = qtyRaw !== "";
+  let boxQty = 1;
+  if (hasBoxQty) {
+    if (!INT_RE.test(qtyRaw) || Number(qtyRaw) < 1) errors.boxQty = "박스당 입수는 1 이상의 정수여야 합니다.";
+    else if (Number(qtyRaw) > PRODUCT_LIMITS.maxBoxQty)
+      errors.boxQty = `박스당 입수는 ${PRODUCT_LIMITS.maxBoxQty.toLocaleString()} 이하여야 합니다.`;
+    else boxQty = Number(qtyRaw);
+  }
+
+  const safetyRaw = text(fd, "safetyStock").replaceAll(",", "");
+  let safetyStock = DEFAULT_SAFETY_STOCK;
+  if (!safetyRaw) errors.safetyStock = "안전재고를 입력하세요.";
+  else if (!INT_RE.test(safetyRaw)) errors.safetyStock = "안전재고는 0 이상의 정수여야 합니다.";
+  else if (Number(safetyRaw) > PRODUCT_LIMITS.maxSafetyStock)
+    errors.safetyStock = `안전재고는 ${PRODUCT_LIMITS.maxSafetyStock.toLocaleString()} 이하여야 합니다.`;
+  else safetyStock = Number(safetyRaw);
+
+  if (Object.keys(errors).length > 0) return { ok: false, message: "입력값을 확인하세요.", errors };
+  return { ok: true, data: { productId, version, name, category, price, boxQty, safetyStock }, hasBoxQty };
+}
+
+/** 상품 비활성화 / 다시 사용 */
+export function parseProductActiveForm(
+  fd: FormData
+): { ok: true; data: { productId: string; active: boolean } } | { ok: false; message: string } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const mode = text(fd, "mode");
+  if (mode !== "inactive" && mode !== "active") return { ok: false, message: "잘못된 요청입니다." };
+  return { ok: true, data: { productId, active: mode === "active" } };
+}

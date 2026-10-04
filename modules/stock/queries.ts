@@ -1,6 +1,8 @@
 // 재고현황·재고원장 조회 (읽기 전용)
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { UUID_RE } from "@/lib/form";
+import { dateOnlyToDb, dbToDateOnly, todayKst } from "@/lib/datetime";
 
 export type StockStatus = "OUT" | "LOW" | "OK";
 
@@ -17,9 +19,39 @@ export function stockStatus(stock: number, safetyStock: number): StockStatus {
   return "OK";
 }
 
+/** 유통기한 임박 기준: 오늘(KST)부터 N일 이내 (오늘 이전이면 만료) */
+export const EXPIRY_SOON_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type ExpiryState = "EXPIRED" | "SOON" | "OK";
+
+/** 오늘(KST)·임박 마지막 날 (DB DATE 와 같은 UTC 자정 Date) */
+function expiryBounds(now = new Date()) {
+  const today = dateOnlyToDb(todayKst(now));
+  return { today, soonEnd: new Date(today.getTime() + EXPIRY_SOON_DAYS * DAY_MS) };
+}
+
+/** 유통기한 "YYYY-MM-DD" → 만료/임박/정상 + 남은 일수 (오늘 = 0) */
+export function expiryStateOf(expiryDate: string, now = new Date()): { state: ExpiryState; days: number } {
+  const days = Math.round((dateOnlyToDb(expiryDate).getTime() - dateOnlyToDb(todayKst(now)).getTime()) / DAY_MS);
+  return { state: days < 0 ? "EXPIRED" : days <= EXPIRY_SOON_DAYS ? "SOON" : "OK", days };
+}
+
+/** 유통기한 조건의 칸별 재고 (alert = 만료+임박) */
+function expiryBalanceWhere(kind: "alert" | "expired" | "soon", warehouseId = ""): Prisma.StockBalanceWhereInput {
+  const { today, soonEnd } = expiryBounds();
+  const expiryDate =
+    kind === "expired" ? { lt: today } : kind === "soon" ? { gte: today, lte: soonEnd } : { lte: soonEnd };
+  return { expiryDate, ...(warehouseId ? { location: { warehouseId } } : {}) };
+}
+
 export type StockFilter = {
   q: string;
   category: string;
+  /** 창고 id ("" = 전체 창고) */
+  warehouse: string;
+  /** 유통기한: "" 전체, alert 만료+임박, expired 만료, soon 임박 */
+  expiry: "" | "alert" | "expired" | "soon";
   /** all: 전체, short: 부족+재고없음, low: 부족만, out: 재고없음만 */
   status: "all" | "short" | "low" | "out";
   sort: "sku" | "stock" | "name";
@@ -37,11 +69,14 @@ function first(v: string | string[] | undefined): string {
 /** URL 검색조건 → 필터 (허용된 값만) */
 export function parseStockFilter(sp: SearchParams): StockFilter {
   const status = first(sp.status);
+  const expiry = first(sp.expiry);
   const sort = first(sp.sort);
   const page = Number(first(sp.page));
   return {
     q: first(sp.q).slice(0, 50),
     category: first(sp.category).slice(0, 50),
+    warehouse: UUID_RE.test(first(sp.warehouse)) ? first(sp.warehouse) : "",
+    expiry: expiry === "alert" || expiry === "expired" || expiry === "soon" ? expiry : "",
     status: status === "short" || status === "low" || status === "out" ? status : "all",
     sort: sort === "stock" || sort === "name" ? sort : "sku",
     page: Number.isInteger(page) && page >= 1 && page <= 100_000 ? page : 1,
@@ -63,7 +98,14 @@ function statusWhere(status: StockFilter["status"]): Prisma.ProductWhereInput {
 }
 
 function buildWhere(filter: StockFilter): Prisma.ProductWhereInput {
+  const warehouseId = filter.warehouse;
   const and: Prisma.ProductWhereInput[] = [ACTIVE]; // 확정 대기 상품은 재고현황에서 제외
+  // 창고 선택: 그 창고 칸에 재고가 있거나 기본 보관위치가 그 창고인 상품
+  if (warehouseId) {
+    and.push({
+      OR: [{ stockBalances: { some: { location: { warehouseId } } } }, { location: { warehouseId } }],
+    });
+  }
   if (filter.q) {
     and.push({
       OR: [
@@ -73,6 +115,8 @@ function buildWhere(filter: StockFilter): Prisma.ProductWhereInput {
     });
   }
   if (filter.category) and.push({ category: filter.category });
+  // 유통기한: 조건에 맞는 칸 재고가 있는 상품 (창고를 고르면 그 창고 칸만)
+  if (filter.expiry) and.push({ stockBalances: { some: expiryBalanceWhere(filter.expiry, warehouseId) } });
   if (filter.status !== "all") and.push(statusWhere(filter.status));
   return { AND: and };
 }
@@ -91,6 +135,14 @@ export async function countShortStock(): Promise<number> {
   return prisma.product.count({ where: { AND: [ACTIVE, statusWhere("short")] } });
 }
 
+/** 유통기한 만료·임박 상품 수 (재고가 남은 칸 기준, 한 상품이 둘 다일 수 있음) — 헤더 알림·대시보드용 */
+export async function countExpiryAlerts(): Promise<{ expired: number; soon: number; total: number }> {
+  const count = (kind: "alert" | "expired" | "soon") =>
+    prisma.product.count({ where: { AND: [ACTIVE, { stockBalances: { some: expiryBalanceWhere(kind) } }] } });
+  const [expired, soon, total] = await Promise.all([count("expired"), count("soon"), count("alert")]);
+  return { expired, soon, total };
+}
+
 /** 요약 (필터와 무관하게 전체 기준, DB 집계) */
 export async function getStockSummary() {
   const [total, out, low, value] = await Promise.all([
@@ -105,9 +157,12 @@ export async function getStockSummary() {
 
 /**
  * 재고현황 목록: 검색·분류·상태 필터, 정렬, 페이지 나누기를 모두 DB에서 처리
+ * 창고를 고르면 그 창고 상품만, 행마다 그 창고 칸 재고 합계(warehouseStock)를 함께 준다.
+ * 상태·정렬·요약·안전재고는 상품 전체 재고 기준 그대로
  */
 export async function listStockStatus(filter: StockFilter) {
   const where = buildWhere(filter);
+  const warehouseId = filter.warehouse;
 
   const [matched, summary, categoryRows] = await Promise.all([
     prisma.product.count({ where }),
@@ -158,6 +213,24 @@ export async function listStockStatus(filter: StockFilter) {
         }),
       ])
     : [[], []];
+  const whStockRows =
+    warehouseId && ids.length
+      ? await prisma.stockBalance.groupBy({
+          by: ["productId"],
+          where: { productId: { in: ids }, location: { warehouseId } },
+          _sum: { quantity: true },
+        })
+      : [];
+  const whStockMap = new Map(whStockRows.map((r) => [r.productId, r._sum.quantity ?? 0]));
+  // 가장 빠른 유통기한 (재고가 남은 칸 중, 창고를 고르면 그 창고 칸만)
+  const nearestRows = ids.length
+    ? await prisma.stockBalance.groupBy({
+        by: ["productId"],
+        where: { productId: { in: ids }, expiryDate: { not: null }, ...(warehouseId ? { location: { warehouseId } } : {}) },
+        _min: { expiryDate: true },
+      })
+    : [];
+  const nearestMap = new Map(nearestRows.map((r) => [r.productId, r._min.expiryDate ? dbToDateOnly(r._min.expiryDate) : null]));
   const lastInMap = new Map(lastIn.map((r) => [r.productId, r._max.receivedAt]));
   const lastOutMap = new Map(lastOut.map((r) => [r.productId, r._max.shippedAt]));
 
@@ -166,7 +239,9 @@ export async function listStockStatus(filter: StockFilter) {
     locationId: location?.id ?? null,
     locationCode: location?.code ?? null,
     status: stockStatus(p.stock, p.safetyStock),
-    stockValue: p.stock * p.price,
+    warehouseStock: warehouseId ? (whStockMap.get(p.id) ?? 0) : null,
+    nearestExpiry: nearestMap.get(p.id) ?? null,
+    stockValue: (warehouseId ? (whStockMap.get(p.id) ?? 0) : p.stock) * p.price,
     lastInboundAt: lastInMap.get(p.id) ?? null,
     lastOutboundAt: lastOutMap.get(p.id) ?? null,
   }));

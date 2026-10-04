@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import { getCurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import { countShortStock } from "@/modules/stock/queries";
+import { countExpiryAlerts, countShortStock } from "@/modules/stock/queries";
 import { formatKstNow } from "@/lib/datetime";
 
 // 영문·숫자·코드는 Inter, 한글은 Pretendard(app/fonts, 서버에서 직접 제공). Inter에 한글 글리프가 없어 자동 대체된다
@@ -32,7 +32,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const user = await getCurrentUser();
   // 헤더 알림(재고 없음·부족 수)과 오늘 날짜(KST). 재고 조회 권한이 없으면 조회하지 않는다
   const canViewStock = !!user && can(user.role, "stock.view");
-  const alertCount = canViewStock ? await countShortStock() : 0;
+  const [alertCount, expiryAlert] = canViewStock
+    ? await Promise.all([countShortStock(), countExpiryAlerts()])
+    : [0, { expired: 0, soon: 0, total: 0 }];
   const nowText = formatKstNow();
 
   return (
@@ -46,6 +48,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               nowText={nowText}
               canViewStock={canViewStock}
               alertCount={alertCount}
+              expiryAlert={expiryAlert}
             />
             <main className="flex-1 p-6">
               <div className="max-w-[1440px]">{children}</div>

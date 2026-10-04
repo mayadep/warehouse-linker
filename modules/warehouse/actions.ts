@@ -10,10 +10,11 @@ import {
   type WarehouseFieldErrors,
 } from "./validation";
 import { changeProductLocation, listRacksForPicker, LocationChangeError } from "./location";
-import { UUID_RE } from "@/lib/form";
+import { UUID_RE, text } from "@/lib/form";
 import { addRacks, createWarehouse, WarehouseError } from "./service";
 import { rackCode, STORAGE_TYPES, STORAGE_TYPE_LABELS } from "./codes";
 import { assignRandomLocations } from "./assign";
+import { setRackActive, setWarehouseActive, WarehouseActiveError } from "./active";
 
 export type WarehouseActionState = {
   status: "idle" | "success" | "error";
@@ -162,4 +163,32 @@ export async function getRacksForPickerAction(warehouseId: string): Promise<Rack
   if (typeof warehouseId !== "string" || !UUID_RE.test(warehouseId)) return { ok: false, message: "잘못된 창고입니다." };
   const r = await listRacksForPicker(warehouseId);
   return { ok: true, ...r };
+}
+
+// ───────── 창고·랙 비활성화 ─────────
+
+export type ActiveActionState = { status: "idle" | "success" | "error"; message: string; ts?: number };
+
+/** 창고/랙 비활성화·다시 사용 (target=warehouse|rack, id, active=1|0) */
+export async function setLocationGroupActiveAction(_prev: ActiveActionState, fd: FormData): Promise<ActiveActionState> {
+  const fail = (message: string): ActiveActionState => ({ status: "error", message, ts: Date.now() });
+  if (!(await authorize("admin"))) return fail(NO_PERMISSION_MESSAGE);
+  const target = text(fd, "target");
+  const id = text(fd, "id");
+  const activeRaw = text(fd, "active");
+  if ((target !== "warehouse" && target !== "rack") || !UUID_RE.test(id) || (activeRaw !== "1" && activeRaw !== "0")) {
+    return fail("잘못된 요청입니다. 새로고침 후 다시 시도하세요.");
+  }
+  const active = activeRaw === "1";
+  try {
+    const r = target === "warehouse" ? await setWarehouseActive(id, active) : await setRackActive(id, active);
+    revalidatePath("/warehouses");
+    revalidatePath(`/warehouses/${r.warehouseId}`);
+    revalidatePath("/stock");
+    return { status: "success", message: `${r.label} ${active ? "다시 사용" : "비활성화"} 완료`, ts: Date.now() };
+  } catch (e) {
+    if (e instanceof WarehouseActiveError) return fail(e.message);
+    console.error("[warehouse] set active failed", e);
+    return fail("처리 중 오류가 발생했습니다. 다시 시도하세요.");
+  }
 }

@@ -2,7 +2,9 @@ import type { Prisma, TradeOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { nextDocNumber } from "@/lib/doc-number";
 import { changeStock, InsufficientStockError, isUniqueViolation } from "@/modules/stock/service";
-import { toKstDate, toKstDateTimeLocal } from "@/lib/datetime";
+import { dateOnlyToDb, toKstDate, toKstDateTimeLocal } from "@/lib/datetime";
+import { storageMismatchWarning } from "@/modules/warehouse/assign";
+import { inactiveLocationMessage } from "@/modules/warehouse/active";
 import { recordAudit } from "@/modules/audit/service";
 import {
   ORDER_PREFIX,
@@ -31,7 +33,7 @@ export async function createOrder(input: OrderCreateInput) {
         where: { id: { in: ids }, status: "ACTIVE" },
         select: { id: true, name: true },
       });
-      if (products.length !== ids.length) throw new OrderError("존재하지 않거나 확정되지 않은 상품이 포함되어 있습니다.");
+      if (products.length !== ids.length) throw new OrderError("존재하지 않거나 확정되지 않았거나 비활성인 상품이 포함되어 있습니다.");
       const nameOf = new Map(products.map((p) => [p.id, p.name]));
 
       const orderNo = await nextDocNumber(tx, ORDER_PREFIX[input.type], async (head) => {
@@ -93,10 +95,42 @@ async function lockOrder(tx: Prisma.TransactionClient, orderId: string) {
 }
 
 /**
+ * 발주 입고 보관 온도 경고: 품목별 지정 위치의 창고 유형이 상품 분류와 다르면 문구 (확인한 위치코드는 제외)
+ * 위치 미지정·없는 위치는 건너뜀 (없는 위치 오류는 처리 단계에서 안내)
+ */
+export async function findOrderStorageWarnings(input: OrderProcessInput): Promise<{ warnings: string[]; codes: string[] }> {
+  const targets = input.lines.filter((l) => l.locationCode && !input.confirmedLocationCodes.includes(l.locationCode));
+  if (targets.length === 0) return { warnings: [], codes: [] };
+  const [lines, locations] = await Promise.all([
+    prisma.tradeOrderLine.findMany({
+      where: { id: { in: targets.map((l) => l.lineId) }, order: { id: input.orderId, type: "PURCHASE" } },
+      select: { id: true, product: { select: { name: true, category: true } } },
+    }),
+    prisma.location.findMany({
+      where: { code: { in: targets.map((l) => l.locationCode!) } },
+      select: { code: true, warehouse: { select: { name: true, storageType: true } } },
+    }),
+  ]);
+  const warnings: string[] = [];
+  const codes = new Set<string>();
+  for (const t of targets) {
+    const line = lines.find((l) => l.id === t.lineId);
+    const loc = locations.find((l) => l.code === t.locationCode);
+    const w = line && loc ? storageMismatchWarning(line.product, loc) : null;
+    if (w) {
+      warnings.push(w);
+      codes.add(loc!.code);
+    }
+  }
+  return { warnings, codes: [...codes] };
+}
+
+/**
  * 발주 → 입고 / 수주 → 출고 처리 (단일 트랜잭션)
  * - 주문 행 잠금 + version 확인 (동시 처리·화면이 오래된 경우 거부)
  * - 품목별 남은 수량 이하만 처리
  * - 품목마다 입고/출고 기록 + 재고 변경(출고는 재고 부족 시 전체 취소) + 처리수량 증가
+ * - 발주 입고는 품목별 위치(비우면 기본 보관위치)·유통기한(비우면 미상) 칸에 넣는다
  * - 요청키(requestId:lineId)로 같은 요청 이중 처리 차단
  */
 export async function processOrder(input: OrderProcessInput) {
@@ -105,7 +139,7 @@ export async function processOrder(input: OrderProcessInput) {
       await lockOrder(tx, input.orderId);
       const order = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: input.orderId },
-        include: { lines: { include: { product: { select: { name: true } } } } },
+        include: { lines: { include: { product: { select: { name: true, locationId: true } } } } },
       });
       if (order.status !== "OPEN" && order.status !== "PARTIAL") {
         throw new OrderError("완료·종결·취소된 주문은 처리할 수 없습니다.");
@@ -135,6 +169,14 @@ export async function processOrder(input: OrderProcessInput) {
         }
 
         if (order.type === "PURCHASE") {
+          const location = req.locationCode
+            ? await tx.location.findUnique({ where: { code: req.locationCode }, select: { id: true } })
+            : null;
+          if (req.locationCode && !location) {
+            throw new OrderError(`${line.product.name}: 존재하지 않는 위치코드입니다: ${req.locationCode}`);
+          }
+          const inactive = location ? await inactiveLocationMessage(tx, location.id) : null;
+          if (inactive) throw new OrderError(`${line.product.name}: ${inactive}`);
           const ib = await tx.inbound.create({
             data: {
               productId: line.productId,
@@ -145,9 +187,17 @@ export async function processOrder(input: OrderProcessInput) {
               receivedAt: input.at,
               requestId: keyOf(line.id),
               orderLineId: line.id,
+              locationId: location?.id ?? null,
+              expiryDate: req.expiryDate ? dateOnlyToDb(req.expiryDate) : null,
             },
           });
-          await changeStock(tx, { productId: line.productId, delta: req.quantity, type: "INBOUND", inboundId: ib.id });
+          await changeStock(tx, {
+            productId: line.productId,
+            delta: req.quantity,
+            type: "INBOUND",
+            inboundId: ib.id,
+            bucket: { locationId: location?.id ?? line.product.locationId, expiryDate: req.expiryDate },
+          });
         } else {
           const ob = await tx.outbound.create({
             data: {
@@ -178,7 +228,8 @@ export async function processOrder(input: OrderProcessInput) {
           data: { processedQty: { increment: req.quantity } },
         });
         totalQty += req.quantity;
-        done.push(`${line.product.name} ${req.quantity.toLocaleString()}`);
+        const where = [req.locationCode, req.expiryDate && `유통기한 ${req.expiryDate}`].filter(Boolean).join(", ");
+        done.push(`${line.product.name} ${req.quantity.toLocaleString()}${where ? ` (${where})` : ""}`);
       }
 
       await tx.tradeOrder.update({ where: { id: order.id }, data: { version: { increment: 1 } } });
@@ -280,7 +331,7 @@ export async function getOrderDetail(id: string) {
       lines: {
         orderBy: { seq: "asc" },
         include: {
-          product: { select: { id: true, sku: true, name: true, baseUnit: true, stock: true } },
+          product: { select: { id: true, sku: true, name: true, baseUnit: true, stock: true, location: { select: { code: true } } } },
           inbounds: {
             where: { status: { not: "CANCELLED" } }, // 취소된 입고는 처리 수량에서 빠짐
             select: { id: true, quantity: true, receivedAt: true },

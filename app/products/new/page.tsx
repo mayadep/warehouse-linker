@@ -6,7 +6,7 @@ import Forbidden from "@/components/Forbidden";
 import { Badge } from "@/components/ui/badge";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import DevBadge from "@/components/DevBadge";
+import ProductManageButtons from "./ProductManageButtons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EmptyState from "@/components/EmptyState";
@@ -14,23 +14,25 @@ import { PackageIcon } from "lucide-react";
 export default async function NewProductPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<{ q?: string | string[]; inactive?: string | string[] }>;
 }) {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
   const user = await requirePageUser();
   if (!can(user.role, "product.create")) return <Forbidden title="상품등록" />;
   const showPrice = can(user.role, "price.view");
   const canConfirm = can(user.role, "product.confirm");
+  const canManage = can(user.role, "product.manage");
 
-  const { q } = await searchParams;
+  const { q, inactive } = await searchParams;
   const keyword = (Array.isArray(q) ? q[0] : q)?.trim().slice(0, 50) ?? "";
+  const includeInactive = (Array.isArray(inactive) ? inactive[0] : inactive) === "1";
 
   const [list, categories] = await Promise.all([
-    listProducts(keyword),
+    listProducts(keyword, includeInactive),
     listCategories(),
   ]);
   const pendingCount = list.filter((p) => p.status === "PENDING").length;
-  const colCount = 9 + (showPrice ? 1 : 0) + (canConfirm ? 1 : 0);
+  const colCount = 9 + (showPrice ? 1 : 0) + (canConfirm || canManage ? 1 : 0);
 
   return (
     <div>
@@ -49,23 +51,11 @@ export default async function NewProductPage({
           {pendingCount > 0 && <span className="ml-2 font-medium text-amber-700">확정 대기 {pendingCount}개</span>}
         </p>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled
-            title="상품 수정 기능은 개발 중입니다"
-            className="flex cursor-not-allowed items-center gap-1 rounded-[6px] border border-gray-200 px-3 py-1.5 text-sm text-gray-400"
-          >
-            상품 수정 <DevBadge />
-          </button>
-          <button
-            type="button"
-            disabled
-            title="상품 비활성화 기능은 개발 중입니다"
-            className="flex cursor-not-allowed items-center gap-1 rounded-[6px] border border-gray-200 px-3 py-1.5 text-sm text-gray-400"
-          >
-            비활성화 <DevBadge />
-          </button>
-          <form className="flex gap-2">
+          <form className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-sm text-gray-600">
+              <input type="checkbox" name="inactive" value="1" defaultChecked={includeInactive} />
+              비활성 포함
+            </label>
             <Input className="w-56 text-sm"
               name="q"
               defaultValue={keyword}
@@ -91,7 +81,7 @@ export default async function NewProductPage({
             <th className="num">현재고</th>
             <th>상태</th>
             <th>등록자</th>
-            {canConfirm && <th>확정</th>}
+            {(canConfirm || canManage) && <th>관리</th>}
           </tr>
         </thead>
         <tbody>
@@ -103,7 +93,7 @@ export default async function NewProductPage({
             </tr>
           )}
           {list.map((p) => (
-            <tr key={p.id} className={p.status === "PENDING" ? "bg-amber-50/40" : undefined}>
+            <tr key={p.id} className={p.status === "PENDING" ? "bg-amber-50/40" : p.status === "INACTIVE" ? "text-gray-400" : undefined}>
               <td className="left">{p.sku}</td>
               <td className="left">{p.name}</td>
               <td>{p.category}</td>
@@ -113,13 +103,28 @@ export default async function NewProductPage({
               {showPrice && <td className="num">{p.status === "PENDING" ? "-" : p.price.toLocaleString()}</td>}
               <td className="num">{p.stock.toLocaleString()}</td>
               <td>
-                <Badge variant={p.status === "PENDING" ? "amber" : "green"}>{p.status === "PENDING" ? "확정 대기" : "확정"}</Badge>
+                <Badge variant={p.status === "PENDING" ? "amber" : p.status === "INACTIVE" ? "gray" : "green"}>{p.status === "PENDING" ? "확정 대기" : p.status === "INACTIVE" ? "비활성" : "확정"}</Badge>
               </td>
               <td className="text-muted-foreground">{p.createdBy?.name ?? "-"}</td>
-              {canConfirm && (
+              {(canConfirm || canManage) && (
                 <td>
                   {p.status === "PENDING" ? (
-                    <ProductReviewButtons product={{ id: p.id, sku: p.sku, name: p.name }} />
+                    canConfirm ? <ProductReviewButtons product={{ id: p.id, sku: p.sku, name: p.name }} /> : "-"
+                  ) : canManage ? (
+                    <ProductManageButtons
+                      product={{
+                        id: p.id,
+                        sku: p.sku,
+                        name: p.name,
+                        category: p.category,
+                        price: p.price,
+                        baseUnit: p.baseUnit,
+                        boxQty: p.boxQty,
+                        safetyStock: p.safetyStock,
+                        status: p.status,
+                      }}
+                      showPrice={showPrice}
+                    />
                   ) : (
                     "-"
                   )}

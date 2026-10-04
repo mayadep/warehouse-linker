@@ -17,6 +17,7 @@ import {
   deletePendingInbound,
   updateInbound,
   findSimilarInbound,
+  findInboundStorageWarning,
   InboundError,
 } from "./service";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
@@ -33,6 +34,8 @@ export type InboundActionState = {
   status: "idle" | "success" | "error" | "confirm";
   message: string;
   errors?: InboundFieldErrors;
+  /** confirm 일 때 확인 대상 위치코드 (보관 온도 경고가 있었던 경우) */
+  confirmLocationCode?: string;
   /** 매 응답마다 바뀌는 값 (클라이언트에서 폼 초기화 트리거용) */
   ts?: number;
 };
@@ -54,16 +57,27 @@ export async function createInboundAction(
     };
   }
 
-  // 유사 입고 경고 (확인 후 재요청이면 건너뜀)
-  if (!parsed.data.confirmDuplicate) {
-    const similar = await findSimilarInbound(parsed.data);
+  // 경고 확인: 유사 입고 + 보관 온도 (확인 후 재요청이면 건너뜀, 온도는 확인한 위치코드가 같을 때만)
+  const warnings: string[] = [];
+  const d = parsed.data;
+  if (!d.confirmDuplicate) {
+    const similar = await findSimilarInbound(d);
     if (similar) {
-      return {
-        status: "confirm",
-        message: `${timeFmt.format(similar.createdAt)}에 같은 입고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.supplier ? ` (${similar.supplier})` : ""}. 중복이 아니면 [그래도 등록]을 누르세요.`,
-        ts: Date.now(),
-      };
+      warnings.push(
+        `${timeFmt.format(similar.createdAt)}에 같은 입고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.supplier ? ` (${similar.supplier})` : ""}.`
+      );
     }
+  }
+  const tempConfirmed = d.confirmDuplicate && d.confirmedLocationCode === d.locationCode;
+  const tempWarning = tempConfirmed ? null : await findInboundStorageWarning(d);
+  if (tempWarning) warnings.push(tempWarning);
+  if (warnings.length > 0) {
+    return {
+      status: "confirm",
+      message: `${warnings.join(" ")} 이대로 진행하려면 [그래도 등록]을 누르세요.`,
+      confirmLocationCode: tempWarning ? d.locationCode ?? undefined : undefined,
+      ts: Date.now(),
+    };
   }
 
   try {

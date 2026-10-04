@@ -1,6 +1,7 @@
 // 수발주 입력값 검증 (서버에서 반드시 실행)
 import { INT_RE, UUID_RE, parseDateTime, parseOptionalText, parseRequestId, parseVersion, text } from "@/lib/form";
-import { parseKstDate } from "@/lib/datetime";
+import { isDateOnly, parseKstDate } from "@/lib/datetime";
+import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { ORDER_LIMITS as L, type OrderTypeCode } from "./codes";
 
 export type OrderLineInput = { productId: string; quantity: number; unitPrice: number | null };
@@ -81,13 +82,23 @@ export function parseOrderCreateForm(
   return { ok: true, data: { type, partner, dueDate, memo: memo.value, requestId: requestId.value, lines } };
 }
 
+export type OrderProcessLine = {
+  lineId: string;
+  quantity: number;
+  /** 발주 입고만: 유통기한 "YYYY-MM-DD" (선택) */
+  expiryDate: string | null;
+  /** 발주 입고만: 넣을 위치코드 (선택, 비우면 상품 기본 보관위치) — 존재 여부는 서비스에서 확인 */
+  locationCode: string | null;
+};
 export type OrderProcessInput = {
   orderId: string;
   version: number;
   requestId: string;
   at: Date;
   memo: string | null;
-  lines: { lineId: string; quantity: number }[];
+  lines: OrderProcessLine[];
+  /** 보관 온도 경고를 확인한 위치코드 (이 코드들의 경고는 건너뜀) */
+  confirmedLocationCodes: string[];
 };
 
 /** 발주 입고 / 수주 출고 처리 */
@@ -108,7 +119,7 @@ export function parseOrderProcessForm(
 
   const arr = parseJsonArray(text(fd, "lines"));
   if (!arr) return { ok: false, message: "잘못된 요청입니다." };
-  const lines: { lineId: string; quantity: number }[] = [];
+  const lines: OrderProcessLine[] = [];
   const seen = new Set<string>();
   for (const r of arr) {
     const row = r as Record<string, unknown>;
@@ -117,13 +128,29 @@ export function parseOrderProcessForm(
     if (!UUID_RE.test(lineId) || seen.has(lineId)) return { ok: false, message: "잘못된 요청입니다." };
     if (q === null || q < 0 || q > L.maxQuantity) return { ok: false, message: "처리 수량은 0 이상의 정수여야 합니다." };
     seen.add(lineId);
-    if (q > 0) lines.push({ lineId, quantity: q });
+    const exp = typeof row?.expiryDate === "string" ? row.expiryDate.trim() : "";
+    if (exp && (!isDateOnly(exp) || Number(exp.slice(0, 4)) < 2000 || Number(exp.slice(0, 4)) > 2100)) {
+      return { ok: false, message: `유통기한 형식이 올바르지 않습니다: ${exp} (예: 2026-12-31)` };
+    }
+    const loc = typeof row?.locationCode === "string" ? row.locationCode.trim().toUpperCase() : "";
+    if (loc && !LOCATION_CODE_RE.test(loc)) {
+      return { ok: false, message: `위치코드 형식이 올바르지 않습니다: ${loc} (예: RF1-R01-2-3)` };
+    }
+    if (q > 0) lines.push({ lineId, quantity: q, expiryDate: exp || null, locationCode: loc || null });
   }
   if (lines.length === 0) return { ok: false, message: "처리할 수량을 1개 이상 입력하세요." };
 
   return {
     ok: true,
-    data: { orderId, version: version.value, requestId: requestId.value, at: at.value, memo: memo.value, lines },
+    data: {
+      orderId,
+      version: version.value,
+      requestId: requestId.value,
+      at: at.value,
+      memo: memo.value,
+      lines,
+      confirmedLocationCodes: text(fd, "confirmedLocationCodes").toUpperCase().split(",").filter(Boolean),
+    },
   };
 }
 

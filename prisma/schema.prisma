@@ -44,6 +44,7 @@ model Product {
 enum ProductStatus {
   PENDING // 등록 대기 (관리자 확정 전)
   ACTIVE  // 확정
+  INACTIVE // 단종·비활성 (목록에서 숨김, 입출고·주문·위치 배정 불가, 이력은 보존)
 }
 
 enum ProductUnit {
@@ -250,6 +251,7 @@ model Warehouse {
   name        String      // 창고명 (예: 냉장 1창고)
   storageType StorageType // 보관유형
   memo        String?
+  isActive    Boolean     @default(true) // false = 비활성 (모든 칸을 새 위치로 지정 불가)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -265,6 +267,7 @@ model Rack {
   number       Int       // 랙 번호 (창고 안에서 1부터, 코드 R01)
   levels       Int       // 단 수
   binsPerLevel Int       // 단별 구획 수
+  isActive     Boolean   @default(true) // false = 비활성 (이 랙의 칸을 새 위치로 지정 불가)
   createdAt    DateTime  @default(now())
 
   locations Location[]

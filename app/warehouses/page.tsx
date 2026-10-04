@@ -6,6 +6,7 @@ import { connection } from "next/server";
 import { countProductsWithoutLocation, listWarehouses, suggestWarehouseCodes } from "@/modules/warehouse/service";
 import { STORAGE_TYPES, STORAGE_TYPE_LABELS } from "@/modules/warehouse/codes";
 import StorageBadge from "./StorageBadge";
+import { Badge } from "@/components/ui/badge";
 import WarehouseCreateButton from "./WarehouseCreateButton";
 import AssignLocationsButton from "./AssignLocationsButton";
 
@@ -49,15 +50,19 @@ export default async function WarehousesPage() {
             <Link
               key={w.id}
               href={`/warehouses/${w.id}`}
-              className="rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-indigo-300 hover:bg-indigo-50/40"
+              className={`rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 ${w.isActive ? "" : "opacity-60"}`}
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm text-muted-foreground">{w.code}</span>
-                <StorageBadge type={w.storageType} />
+                <span className="flex items-center gap-1">
+                  {!w.isActive && <Badge variant="gray">비활성</Badge>}
+                  <StorageBadge type={w.storageType} />
+                </span>
               </div>
               <p className="mt-1 text-lg font-semibold">{w.name}</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 랙 {w._count.racks.toLocaleString()}개 · 구획 {w._count.locations.toLocaleString()}칸
+                {w.inactiveRacks > 0 && ` · 비활성 랙 ${w.inactiveRacks.toLocaleString()}개`}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 상품 배정 {w.usedLocations.toLocaleString()}칸

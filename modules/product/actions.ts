@@ -3,12 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import {
+  parseProductActiveForm,
   parseProductConfirmForm,
   parseProductForm,
   parseProductRejectForm,
+  parseProductUpdateForm,
   type ProductFieldErrors,
+  type ProductUpdateFieldErrors,
 } from "./validation";
-import { confirmProduct, createProduct, DuplicateSkuError, ProductError, rejectProduct } from "./service";
+import {
+  confirmProduct,
+  createProduct,
+  DuplicateSkuError,
+  ProductError,
+  rejectProduct,
+  setProductActive,
+  updateProduct,
+} from "./service";
 
 export type ProductActionState = {
   status: "idle" | "success" | "error";
@@ -63,6 +74,7 @@ async function review(fn: () => Promise<string>): Promise<ProductReviewState> {
     revalidatePath("/products/new");
     revalidatePath("/inbound");
     revalidatePath("/outbound");
+    revalidatePath("/orders", "layout");
     return { status: "success", message, ts: Date.now() };
   } catch (e) {
     if (e instanceof ProductError) return { status: "error", message: e.message, ts: Date.now() };
@@ -91,5 +103,34 @@ export async function rejectProductAction(_p: ProductReviewState, fd: FormData):
   return review(async () => {
     const p = await rejectProduct(parsed.data);
     return `[${p.sku}] ${p.name} 반려(삭제) 완료`;
+  });
+}
+
+export type ProductUpdateState = {
+  status: "idle" | "success" | "error";
+  message: string;
+  errors?: ProductUpdateFieldErrors;
+  ts?: number;
+};
+
+/** 상품 수정 (관리자): 품명·분류·판매가·박스당 입수·안전재고 */
+export async function updateProductAction(_p: ProductUpdateState, fd: FormData): Promise<ProductUpdateState> {
+  if (!(await authorize("product.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseProductUpdateForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, errors: parsed.errors, ts: Date.now() };
+  return review(async () => {
+    const p = await updateProduct({ ...parsed.data, hasBoxQty: parsed.hasBoxQty });
+    return `[${p.sku}] ${p.name} 수정 완료`;
+  });
+}
+
+/** 상품 비활성화(단종) / 다시 사용 (관리자) */
+export async function setProductActiveAction(_p: ProductReviewState, fd: FormData): Promise<ProductReviewState> {
+  if (!(await authorize("product.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseProductActiveForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const p = await setProductActive(parsed.data.productId, parsed.data.active);
+    return `[${p.sku}] ${p.name} ${parsed.data.active ? "다시 사용" : "비활성화"} 완료`;
   });
 }

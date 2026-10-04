@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BellIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, KeyRoundIcon, LogOutIcon, SearchIcon, UserIcon } from "lucide-react";
+import { BellIcon, CalendarClockIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, KeyRoundIcon, LogOutIcon, SearchIcon, UserIcon } from "lucide-react";
 import { findMenu } from "./nav-menus";
 import PasswordChangeModal from "./PasswordChangeModal";
 import { formatKstNow } from "@/lib/datetime";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 /**
  * 상단 헤더(64px): 현재 위치 · 상품 검색 · 날짜/시각(KST) · 재고 알림 · 사용자 메뉴
  * - 검색·알림은 재고 조회 권한(canViewStock)이 있을 때만 보인다 (이동할 재고현황 화면이 권한 필요)
+ * - 유통기한 알림(만료+임박 상품 수)은 재고 부족 벨과 따로 표시, 만료가 있으면 빨강·임박만 있으면 노랑
  * - 창고 선택은 재고가 아직 상품 단위(창고별 재고 없음)라 넣지 않았다
  */
 export default function Header({
@@ -21,11 +22,13 @@ export default function Header({
   nowText,
   canViewStock,
   alertCount,
+  expiryAlert,
 }: {
   user: { name: string; role: UserRoleCode };
   nowText: string;
   canViewStock: boolean;
   alertCount: number;
+  expiryAlert: { expired: number; soon: number; total: number };
 }) {
   const pathname = usePathname();
   const current = findMenu(pathname);
@@ -72,6 +75,24 @@ export default function Header({
         <CalendarIcon className="size-4 text-muted-foreground" aria-hidden="true" />
         <span suppressHydrationWarning>{now}</span>
       </p>
+
+      {canViewStock && (
+        <Link
+          href="/stock?expiry=alert"
+          title={expiryAlert.total > 0 ? `유통기한 만료 ${expiryAlert.expired}개 · 임박 ${expiryAlert.soon}개` : "유통기한 알림 없음"}
+          aria-label={expiryAlert.total > 0 ? `유통기한 알림 ${expiryAlert.total}개` : "유통기한 알림 없음"}
+          className="relative flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 ease-out hover:bg-muted hover:text-foreground"
+        >
+          <CalendarClockIcon className="size-5" strokeWidth={1.8} />
+          {expiryAlert.total > 0 && (
+            <span
+              className={`absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-md px-1 text-[10px] font-semibold text-white tabular-nums ${expiryAlert.expired > 0 ? "bg-destructive" : "bg-[#d89b18]"}`}
+            >
+              {expiryAlert.total > 99 ? "99+" : expiryAlert.total}
+            </span>
+          )}
+        </Link>
+      )}
 
       {canViewStock && (
         <Link

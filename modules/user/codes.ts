@@ -26,6 +26,7 @@ export function isUserRole(v: string): v is UserRoleCode {
 const PERMISSIONS = {
   "product.create": ["STAFF", "ADMIN"], // 상품 등록 (직원은 대기 상태로)
   "product.confirm": ["ADMIN"], // 상품 등록 확정·반려
+  "product.manage": ["ADMIN"], // 상품 수정·비활성화·다시 사용
   "inbound.create": ["STAFF", "ADMIN"], // 입고 등록 (직원은 대기 상태로)
   "inbound.manage": ["ADMIN"], // 입고 확정·수정·취소·대기건 삭제
   "outbound.create": ["STAFF", "ADMIN"], // 출고 등록 (직원은 대기 상태로)

@@ -4,6 +4,7 @@ import { storageTypeForCategory } from "./assign";
 import { STORAGE_TYPE_LABELS } from "./codes";
 import type { LocationChangeInput } from "./validation";
 import { recordAudit } from "@/modules/audit/service";
+import { inactiveLocationMessage } from "./active";
 
 export class LocationChangeError extends Error {}
 
@@ -41,7 +42,7 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
       },
     });
     if (!product) throw new LocationChangeError("존재하지 않는 상품입니다.");
-    if (product.status !== "ACTIVE") throw new LocationChangeError("확정되지 않은 상품은 위치를 지정할 수 없습니다.");
+    if (product.status !== "ACTIVE") throw new LocationChangeError("확정되지 않았거나 비활성인 상품은 위치를 지정할 수 없습니다.");
     if ((product.locationId ?? null) !== input.expectedLocationId) {
       throw new LocationChangeError("그 사이 이 상품의 위치가 바뀌었습니다. 새로고침 후 다시 시도하세요.");
     }
@@ -78,6 +79,8 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
     });
     if (!target) throw new LocationChangeError(`없는 위치코드입니다: ${input.targetCode}`);
     if (target.id === product.locationId) throw new LocationChangeError("현재와 같은 위치입니다.");
+    const inactive = await inactiveLocationMessage(tx, target.id);
+    if (inactive) throw new LocationChangeError(inactive);
 
     const occupant = target.product;
     const warnings: string[] = [];
@@ -137,19 +140,19 @@ export async function changeProductLocation(input: LocationChangeInput): Promise
   });
 }
 
-/** 위치 선택용 창고 목록 */
+/** 창고 목록 (재고현황 필터·위치 선택용, 비활성 창고 포함 — 위치 선택에서는 화면이 제외) */
 export async function listWarehouseOptions() {
   return prisma.warehouse.findMany({
-    select: { id: true, code: true, name: true, storageType: true },
+    select: { id: true, code: true, name: true, storageType: true, isActive: true },
     orderBy: [{ storageType: "asc" }, { code: "asc" }],
   });
 }
 
-/** 위치 선택용 랙 목록 (+칸별 배정 상품) */
+/** 위치 선택용 랙 목록 (+칸별 배정 상품) — 사용 중인 창고의 사용 중인 랙만 */
 export async function listRacksForPicker(warehouseId: string) {
   const [racks, occupied] = await Promise.all([
     prisma.rack.findMany({
-      where: { warehouseId },
+      where: { warehouseId, isActive: true, warehouse: { isActive: true } },
       select: { number: true, levels: true, binsPerLevel: true },
       orderBy: { number: "asc" },
     }),

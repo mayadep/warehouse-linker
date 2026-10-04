@@ -3,7 +3,12 @@
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import { newRequestId } from "@/lib/request-id";
-import { finishOrderAction, processOrderAction, type OrderActionState } from "@/modules/order/actions";
+import {
+  finishOrderAction,
+  processOrderAction,
+  type OrderActionState,
+  type OrderProcessState,
+} from "@/modules/order/actions";
 import { ORDER_PROCESS_LABELS, type OrderStatusCode, type OrderTypeCode } from "@/modules/order/codes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +19,12 @@ export type ProcessLine = {
   baseUnit: string;
   remaining: number;
   stock: number;
+  /** 기본 보관위치 (발주 입고 위치를 비우면 여기로) */
+  locationCode: string | null;
 };
 
 const initial: OrderActionState = { status: "idle", message: "" };
+const initialProcess: OrderProcessState = { status: "idle", message: "" };
 
 function ProcessForm({
   orderId,
@@ -33,7 +41,11 @@ function ProcessForm({
   onClose: () => void;
   onDone: (msg: string) => void;
 }) {
-  const [state, action, pending] = useActionState(processOrderAction, initial);
+  const [state, action, pending] = useActionState(processOrderAction, initialProcess);
+  const isPurchase = type === "PURCHASE";
+  // 발주 입고만: 품목별 유통기한·위치코드 (비우면 미상·기본 보관위치)
+  const [expiry, setExpiry] = useState<Record<string, string>>({});
+  const [loc, setLoc] = useState<Record<string, string>>({});
   const requestIdRef = useRef<string | null>(null);
   // 기본값: 남은 수량 (출고는 현재고까지만)
   const [qty, setQty] = useState<Record<string, string>>(() =>
@@ -46,8 +58,19 @@ function ProcessForm({
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (pending) return;
-    const fd = new FormData(e.currentTarget);
-    fd.set("lines", JSON.stringify(lines.map((l) => ({ lineId: l.id, quantity: qty[l.id] || "0" }))));
+    // submitter 포함: [그래도 입고] 버튼의 confirmedLocationCodes 가 함께 전송됨
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const fd = new FormData(e.currentTarget, submitter);
+    fd.set(
+      "lines",
+      JSON.stringify(
+        lines.map((l) => ({
+          lineId: l.id,
+          quantity: qty[l.id] || "0",
+          ...(isPurchase ? { expiryDate: expiry[l.id] ?? "", locationCode: loc[l.id] ?? "" } : {}),
+        }))
+      )
+    );
     requestIdRef.current ??= newRequestId();
     fd.set("requestId", requestIdRef.current);
     startTransition(() => action(fd));
@@ -55,7 +78,7 @@ function ProcessForm({
 
   const label = ORDER_PROCESS_LABELS[type];
   return (
-    <Modal title={`${label} 처리`} onClose={onClose} maxWidth="max-w-2xl" closeDisabled={pending}>
+    <Modal title={`${label} 처리`} onClose={onClose} maxWidth={isPurchase ? "max-w-4xl" : "max-w-2xl"} closeDisabled={pending}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-3 text-sm">
         <input type="hidden" name="orderId" value={orderId} />
         <input type="hidden" name="version" value={version} />
@@ -66,6 +89,8 @@ function ProcessForm({
               <th className="text-right">남은 수량</th>
               {type === "SALES" && <th className="text-right">현재고</th>}
               <th className="w-32">이번 {label}</th>
+              {isPurchase && <th className="w-40">유통기한 (선택)</th>}
+              {isPurchase && <th className="w-44">위치 (비우면 기본)</th>}
             </tr>
           </thead>
           <tbody>
@@ -88,12 +113,35 @@ function ProcessForm({
                       onChange={(e) => setQty((q) => ({ ...q, [l.id]: e.target.value }))}
                       className={`w-full rounded border px-2 py-1 ${over ? "border-red-400" : "border-gray-300"}`} />
                   </td>
+                  {isPurchase && (
+                    <td className="pl-2">
+                      <Input
+                        type="date"
+                        aria-label={`${l.name} 유통기한`}
+                        value={expiry[l.id] ?? ""}
+                        onChange={(e) => setExpiry((m) => ({ ...m, [l.id]: e.target.value }))}
+                        className="w-full" />
+                    </td>
+                  )}
+                  {isPurchase && (
+                    <td className="pl-2">
+                      <Input
+                        aria-label={`${l.name} 위치코드`}
+                        maxLength={30}
+                        value={loc[l.id] ?? ""}
+                        onChange={(e) => setLoc((m) => ({ ...m, [l.id]: e.target.value.toUpperCase() }))}
+                        placeholder={l.locationCode ?? "기본 위치 없음"}
+                        className="w-full font-mono uppercase" />
+                    </td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <p className="text-xs text-gray-500">0을 넣은 품목은 처리하지 않습니다. 남은 수량을 넘거나{type === "SALES" ? " 재고가 부족하면" : "면"} 전체가 저장되지 않습니다.</p>
+        <p className="text-xs text-gray-500">0을 넣은 품목은 처리하지 않습니다. 남은 수량을 {type === "SALES" ? "넘거나 재고가 부족하면" : "넘으면"} 전체가 저장되지 않습니다.
+          {isPurchase && " 유통기한을 비우면 '미상', 위치를 비우면 상품의 기본 보관위치(회색 글씨)로 들어갑니다."}
+        </p>
         <div className="flex gap-3">
           <label className="flex-1">
             {label}일시 (비우면 현재)
@@ -104,6 +152,26 @@ function ProcessForm({
             <Input className="w-full" name="memo" maxLength={500} />
           </label>
         </div>
+        {state.status === "confirm" && (
+          <div aria-live="polite" className="rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+            <ul className="list-disc pl-5">
+              {state.warnings?.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <p>{state.message}</p>
+              <button
+                name="confirmedLocationCodes"
+                value={(state.confirmCodes ?? []).join(",")}
+                disabled={pending}
+                className="shrink-0 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
+              >
+                그래도 입고
+              </button>
+            </div>
+          </div>
+        )}
         {state.status === "error" && <p className="text-red-600">{state.message}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" type="button" onClick={onClose} disabled={pending}>

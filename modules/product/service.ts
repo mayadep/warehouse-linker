@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { ProductInput } from "./validation";
+import { productVersion, type ProductInput, type ProductUpdateInput } from "./validation";
 import { recordAudit } from "@/modules/audit/service";
 import type { CurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
@@ -124,18 +124,148 @@ export async function rejectProduct(input: { productId: string; reason: string }
   });
 }
 
-export async function listProducts(keyword?: string) {
+/** 상품 행 잠금 후 조회 (수정·비활성화 공통). 보관위치 변경과 같은 잠금 순서(advisory → 상품 행) */
+async function lockProduct(tx: Prisma.TransactionClient, productId: string) {
+  await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext('assign-product-locations'))`;
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Product" WHERE "id" = ${productId} FOR UPDATE`;
+  if (rows.length === 0) throw new ProductError("존재하지 않는 상품입니다.");
+  return tx.product.findUniqueOrThrow({
+    where: { id: productId },
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      category: true,
+      price: true,
+      boxQty: true,
+      baseUnit: true,
+      safetyStock: true,
+      stock: true,
+      status: true,
+      locationId: true,
+      location: { select: { code: true } },
+    },
+  });
+}
+
+/**
+ * 상품 수정 (관리자): 품명·분류·판매가·박스당 입수·안전재고.
+ * 품목코드·기본단위·유통기한 관리는 이력의 의미가 바뀌므로 수정하지 않는다.
+ * 확정 대기 상품은 판매가를 바꾸지 않는다(확정 시 입력).
+ */
+export async function updateProduct(input: ProductUpdateInput & { hasBoxQty: boolean }) {
+  return prisma.$transaction(async (tx) => {
+    const cur = await lockProduct(tx, input.productId);
+    if (cur.status === "INACTIVE") throw new ProductError(`[${cur.sku}] ${cur.name}은(는) 비활성 상품입니다. 다시 사용으로 바꾼 뒤 수정하세요.`);
+    if (productVersion(cur) !== input.version) {
+      throw new ProductError(`[${cur.sku}] ${cur.name}이(가) 그 사이 다른 곳에서 수정되었습니다. 새로고침 후 다시 시도하세요.`);
+    }
+    const next = {
+      name: input.name,
+      category: input.category,
+      price: cur.status === "PENDING" ? cur.price : input.price,
+      boxQty: cur.baseUnit === "BOX" ? 1 : input.hasBoxQty ? input.boxQty : cur.boxQty,
+      safetyStock: input.safetyStock,
+    };
+    const labels = { name: "품명", category: "분류", price: "판매가", boxQty: "박스당 입수", safetyStock: "안전재고" } as const;
+    const changes: Record<string, { from: string | number; to: string | number }> = {};
+    for (const k of Object.keys(labels) as (keyof typeof labels)[]) {
+      if (cur[k] !== next[k]) changes[labels[k]] = { from: cur[k], to: next[k] };
+    }
+    if (Object.keys(changes).length === 0) throw new ProductError("변경된 내용이 없습니다.");
+
+    await tx.product.update({ where: { id: cur.id }, data: next });
+    const summaryChanges = Object.entries(changes)
+      .map(([k, c]) => `${k} ${c.from.toLocaleString()} → ${c.to.toLocaleString()}`)
+      .join(", ");
+    await recordAudit(tx, {
+      category: "PRODUCT",
+      action: "PRODUCT_UPDATE",
+      targetId: cur.id,
+      targetLabel: `[${cur.sku}] ${cur.name}`,
+      summary: `상품 수정: [${cur.sku}] ${cur.name} (${summaryChanges})`,
+      detail: changes,
+    });
+    return { sku: cur.sku, name: next.name };
+  });
+}
+
+/** 비활성화를 막는 항목: 재고·대기 입출고·진행 중 주문 (없으면 빈 배열) */
+async function findProductBlockers(tx: Prisma.TransactionClient, p: { id: string; stock: number }): Promise<string[]> {
+  const [inbounds, outbounds, lines] = await Promise.all([
+    tx.inbound.count({ where: { productId: p.id, status: "PENDING" } }),
+    tx.outbound.count({ where: { productId: p.id, status: "PENDING" } }),
+    tx.tradeOrderLine.findMany({
+      where: { productId: p.id, order: { status: { in: ["OPEN", "PARTIAL"] } } },
+      select: { quantity: true, processedQty: true, order: { select: { orderNo: true } } },
+    }),
+  ]);
+  const openLines = lines.filter((l) => l.processedQty < l.quantity);
+  const out: string[] = [];
+  if (p.stock > 0) out.push(`재고가 남아 있습니다 (현재고 ${p.stock.toLocaleString()}). 출고 후 비활성화하세요.`);
+  if (inbounds > 0) out.push(`확정 대기 입고가 ${inbounds.toLocaleString()}건 있습니다. 확정하거나 삭제하세요.`);
+  if (outbounds > 0) out.push(`확정 대기 출고가 ${outbounds.toLocaleString()}건 있습니다. 확정하거나 삭제하세요.`);
+  if (openLines.length > 0) {
+    const nos = openLines.map((l) => l.order.orderNo).slice(0, 3).join(", ");
+    out.push(`진행 중인 발주·수주에 포함되어 있습니다 (${nos}${openLines.length > 3 ? " 외" : ""}). 종결하거나 취소하세요.`);
+  }
+  return out;
+}
+
+/**
+ * 상품 비활성화(단종) / 다시 사용 (관리자)
+ * - 비활성화: 재고 0, 대기 입출고·진행 중 주문 없음. 기본 보관위치는 비워 칸을 돌려준다(이력 기록). 입출고·재고 이력은 그대로.
+ * - 확정 대기 상품은 대상이 아님(반려 사용). 이미 그 상태면 거부(연타·동시 처리)
+ */
+export async function setProductActive(productId: string, active: boolean) {
+  return prisma.$transaction(async (tx) => {
+    const p = await lockProduct(tx, productId);
+    const label = `[${p.sku}] ${p.name}`;
+    if (p.status === "PENDING") throw new ProductError(`${label}은(는) 확정 대기 상품입니다. 확정 또는 반려로 처리하세요.`);
+    const target = active ? "ACTIVE" : "INACTIVE";
+    if (p.status === target) {
+      throw new ProductError(`${label}은(는) 이미 ${active ? "사용 중" : "비활성"}입니다. 새로고침 후 확인하세요.`);
+    }
+    if (!active) {
+      const blockers = await findProductBlockers(tx, p);
+      if (blockers.length > 0) throw new ProductError(`${label} 비활성화 불가: ${blockers.join(" / ")}`);
+    }
+    const releaseLocation = !active && p.locationId !== null;
+    await tx.product.update({
+      where: { id: p.id },
+      data: { status: target, ...(releaseLocation ? { locationId: null } : {}) },
+    });
+    if (releaseLocation) {
+      await tx.productLocationHistory.create({
+        data: { productId: p.id, fromCode: p.location?.code ?? null, toCode: null, reason: "상품 비활성화" },
+      });
+    }
+    await recordAudit(tx, {
+      category: "PRODUCT",
+      action: active ? "PRODUCT_ACTIVE" : "PRODUCT_INACTIVE",
+      targetId: p.id,
+      targetLabel: label,
+      summary: `상품 ${active ? "다시 사용" : "비활성화"}: ${label}${releaseLocation ? ` (보관위치 ${p.location?.code} 해제)` : ""}`,
+    });
+    return { sku: p.sku, name: p.name };
+  });
+}
+
+export async function listProducts(keyword?: string, includeInactive = false) {
   const k = keyword?.trim();
   return prisma.product.findMany({
-    where: k
-      ? {
-          OR: [
-            { sku: { contains: k, mode: "insensitive" } },
-            { name: { contains: k, mode: "insensitive" } },
-            { category: { contains: k, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...(includeInactive ? {} : { status: { not: "INACTIVE" } }),
+      ...(k
+        ? {
+            OR: [
+              { sku: { contains: k, mode: "insensitive" } },
+              { name: { contains: k, mode: "insensitive" } },
+              { category: { contains: k, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     select: {
       id: true,
       sku: true,
@@ -145,6 +275,7 @@ export async function listProducts(keyword?: string) {
       stock: true,
       baseUnit: true,
       boxQty: true,
+      safetyStock: true,
       trackExpiry: true,
       status: true,
       createdBy: { select: { name: true } },

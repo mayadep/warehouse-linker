@@ -11,7 +11,7 @@ import { STORAGE_TYPE_LABELS, locationCode, rackCode, type StorageTypeCode } fro
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-export type WarehouseOption = { id: string; code: string; name: string; storageType: StorageTypeCode };
+export type WarehouseOption = { id: string; code: string; name: string; storageType: StorageTypeCode; isActive: boolean };
 
 const initialState: LocationChangeActionState = { status: "idle", message: "" };
 const sel = "";
@@ -98,7 +98,7 @@ export default function LocationEditor({
         <span className="text-gray-400">→</span>
         <NativeSelect aria-label="창고" className={sel} value={whId} onChange={(e) => onWarehouse(e.target.value)}>
           <option value="">창고</option>
-          {warehouses.map((w) => (
+          {warehouses.filter((w) => w.isActive).map((w) => (
             <option key={w.id} value={w.id}>
               {w.code} {w.name} ({STORAGE_TYPE_LABELS[w.storageType]})
             </option>

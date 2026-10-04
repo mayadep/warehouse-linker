@@ -2,7 +2,7 @@
 
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
-import { createOrder, finishOrder, processOrder, OrderError } from "./service";
+import { createOrder, findOrderStorageWarnings, finishOrder, processOrder, OrderError } from "./service";
 import { parseOrderCreateForm, parseOrderProcessForm, parseOrderRefForm, type OrderCreateErrors } from "./validation";
 import { ORDER_PROCESS_LABELS, ORDER_STATUS_LABELS, ORDER_TYPE_LABELS } from "./codes";
 
@@ -40,11 +40,31 @@ export async function createOrderAction(_prev: OrderCreateState, fd: FormData): 
 
 export type OrderActionState = { status: "idle" | "success" | "error"; message: string; ts?: number };
 
-export async function processOrderAction(_prev: OrderActionState, fd: FormData): Promise<OrderActionState> {
+export type OrderProcessState = {
+  /** confirm: 보관 온도 경고가 있어 사용자 확인이 필요 (저장 안 됨) */
+  status: "idle" | "success" | "error" | "confirm";
+  message: string;
+  warnings?: string[];
+  /** confirm 일 때 확인 대상 위치코드 (확인 버튼이 다시 보냄) */
+  confirmCodes?: string[];
+  ts?: number;
+};
+
+export async function processOrderAction(_prev: OrderProcessState, fd: FormData): Promise<OrderProcessState> {
   if (!(await authorize("admin"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
   const parsed = parseOrderProcessForm(fd);
   if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
   try {
+    const { warnings, codes } = await findOrderStorageWarnings(parsed.data);
+    if (warnings.length > 0) {
+      return {
+        status: "confirm",
+        message: "이대로 입고하려면 [그래도 입고]를 누르세요.",
+        warnings,
+        confirmCodes: [...parsed.data.confirmedLocationCodes, ...codes],
+        ts: Date.now(),
+      };
+    }
     const r = await processOrder(parsed.data);
     revalidateAll();
     return {

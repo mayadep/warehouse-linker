@@ -187,7 +187,9 @@ function MoveForm({
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (pending) return;
-    const fd = new FormData(e.currentTarget);
+    // submitter 포함: [그래도 이동] 버튼의 confirmedLocationCode 가 함께 전송됨
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const fd = new FormData(e.currentTarget, submitter);
     startTransition(() => formAction(fd));
   }
 
@@ -223,6 +225,22 @@ function MoveForm({
       <Button size="sm" variant="outline" type="button" onClick={onCancel} disabled={pending}>
         취소
       </Button>
+      {state.status === "confirm" && (
+        <div
+          aria-live="polite"
+          className="flex w-full items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900"
+        >
+          <p>{state.message}</p>
+          <button
+            name="confirmedLocationCode"
+            value={state.confirmLocationCode ?? ""}
+            disabled={pending}
+            className="shrink-0 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
+          >
+            그래도 이동
+          </button>
+        </div>
+      )}
       {state.status === "error" && (
         <span aria-live="polite" className="w-full text-xs text-red-600">
           {state.message}

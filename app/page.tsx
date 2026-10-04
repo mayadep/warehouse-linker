@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { AlertTriangleIcon, BoxesIcon, CheckCircle2Icon, ClipboardListIcon, PackageIcon, TruckIcon } from "lucide-react";
+import { AlertTriangleIcon, BoxesIcon, CalendarClockIcon, CheckCircle2Icon, ClipboardListIcon, PackageIcon, TruckIcon } from "lucide-react";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import { getPendingCounts, getRecentActivity, getShortProducts, getTodayOverview } from "@/modules/dashboard/queries";
+import { countExpiryAlerts, EXPIRY_SOON_DAYS } from "@/modules/stock/queries";
 import KpiCard, { type KpiDelta } from "@/components/KpiCard";
 import EmptyState from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +33,20 @@ export default async function DashboardPage() {
   const canViewStock = can(user.role, "stock.view");
   const isAdmin = can(user.role, "admin");
 
-  const [overview, recent, shortProducts, pending] = await Promise.all([
+  const [overview, recent, shortProducts, pending, expiry] = await Promise.all([
     getTodayOverview(),
     getRecentActivity(),
     canViewStock ? getShortProducts() : Promise.resolve([]),
     isAdmin ? getPendingCounts() : Promise.resolve(null),
+    canViewStock ? countExpiryAlerts() : Promise.resolve(null),
   ]);
+  // 유통기한 알림 (만료 = 빨강, 임박 = 노랑)
+  const expiryItems = expiry
+    ? [
+        { label: "유통기한 만료", count: expiry.expired, href: "/stock?expiry=expired", tone: "bg-[#fff0f0] text-[#b42323]" },
+        { label: `유통기한 임박(${EXPIRY_SOON_DAYS}일 이내)`, count: expiry.soon, href: "/stock?expiry=soon", tone: "bg-[#fff7e1] text-[#996b00]" },
+      ].filter((p) => p.count > 0)
+    : [];
   const shortTotal = overview.outCount + overview.lowCount;
   const pendingItems = pending
     ? [
@@ -85,6 +94,18 @@ export default async function DashboardPage() {
                 더보기
               </Link>
             </div>
+            {expiryItems.length > 0 && (
+              <ul className="mb-3 flex flex-wrap gap-2">
+                {expiryItems.map((p) => (
+                  <li key={p.label}>
+                    <Link href={p.href} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ${p.tone}`}>
+                      <CalendarClockIcon className="size-3.5" aria-hidden="true" />
+                      {p.label} {p.count}개 상품
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
             {pendingItems.length > 0 && (
               <ul className="mb-3 flex flex-wrap gap-2">
                 {pendingItems.map((p) => (

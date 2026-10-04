@@ -21,7 +21,11 @@
   - 순서: 상품 행 FOR UPDATE → 총재고·칸 확인(실패 시 아무것도 안 바뀜) → 총재고 반영(조건부 UPDATE) → 칸별 재고·이력
 - `changeStockExpiry`: 한 칸의 일부/전부를 다른 유통기한으로 (EXPIRY_CHANGE -n/+n, 총재고 불변). 재고현황 원장 팝업 [유통기한 입력/변경](관리자, `changeStockExpiryAction`, 감사 로그 STOCK_EXPIRY_CHANGE) — 입고 때 비워 둔 유통기한을 나중에 입력하는 경로
 - `moveStock`: 한 칸의 일부/전부를 다른 위치로 (유통기한 유지, MOVE -n/+n, 총재고 불변). 같은 칸·칸 재고 초과는 거부. 유통기한 변경과 같은 `transferBucket` 사용. 원장 팝업 [위치 이동](관리자, 위치코드 입력, `moveStockAction`, 감사 로그 STOCK_MOVE). 위치코드 형식 `LOCATION_CODE_RE`(modules/warehouse/codes.ts, 입고와 공용)
-- 입고 폼: 유통기한(선택), 보관 위치코드(선택, 서버에서 존재 확인). 발주 입고 처리는 기본 위치·유통기한 미상
+- 유통기한 알림(2026-10-04): 재고가 남은 칸(StockBalance)의 유통기한 기준, 만료 = 오늘(KST) 이전, 임박 = 오늘~`EXPIRY_SOON_DAYS`(7)일 이내(modules/stock/queries.ts `expiryStateOf`·`countExpiryAlerts`, 상품 수 기준, 한 상품이 만료·임박 둘 다일 수 있음). 표시: 헤더 유통기한 아이콘(만료+임박 상품 수, 만료 있으면 Danger·임박만 Warning, → `/stock?expiry=alert`), 재고현황 '유통기한' 필터(`?expiry=alert|expired|soon`, 창고 필터와 함께 쓰면 그 창고 칸만)와 '유통기한' 칸(가장 빠른 유통기한 + 만료/D-n 배지), 대시보드 주요 알림 칩(만료·임박)
+- 재고현황 창고 필터(2026-10-04): URL `?warehouse=<창고 id>`(`StockFilter.warehouse`, UUID·존재 확인, 없으면 무시). 그 창고 칸에 재고가 있거나 기본 보관위치가 그 창고인 상품만, 현재고·재고금액은 그 창고 칸 합계(`warehouseStock`, 전체와 다르면 '전체 N' 병기). 상태·정렬·요약 카드·헤더 알림·안전재고는 상품 전체 재고 기준
+- 배치도 칸 수량(2026-10-04): 창고 상세 랙 배치도 칸에 그 칸의 재고(`listLocationBalances`, 상품별 유통기한 합산) 표시. 대표 수량은 배정 상품(없으면 첫 상품), 다른 상품 재고가 있으면 '외 N종', 칸 툴팁에 전체 목록. 배정 상품이 재고 없으면 '재고 0'
+- 보관 온도 검사 `storageMismatchWarning`(modules/warehouse/assign.ts): 상품 분류의 보관 유형(`storageTypeForCategory`)과 칸의 창고 유형이 다르면 경고 → 사용자가 [그래도 등록/이동]으로 확인하면 허용(차단 아님). 확인은 그 위치코드에만 유효(`confirmedLocationCode`, 위치를 바꾸면 다시 경고). 적용: 입고 등록(위치코드 지정 시, 유사 입고 경고와 한 번에 표시), 원장 [위치 이동], 보관위치 변경(`changeProductLocation`)
+- 입고 폼: 유통기한(선택), 보관 위치코드(선택, 서버에서 존재 확인). 발주 입고 처리 모달(2026-10-04)도 품목별 유통기한(선택, 비우면 미상)·위치코드(선택, 비우면 기본 보관위치, placeholder로 표시) 입력 — lines JSON `expiryDate`·`locationCode`, 없는 위치코드는 그 품목명과 함께 오류, 보관 온도 경고는 `findOrderStorageWarnings` → [그래도 입고](`confirmedLocationCodes`). 수주 출고 처리는 자동(위치 지정 없음)
 - 출고 위치 지정(2026-10-03): 출고 폼·확정 모달 "출고 위치" 선택(`app/outbound/PickSelect.tsx`, 칸 목록 `getPickOptionsAction` — outbound.create 권한, `listProductBalances`). 기본 "자동"(유통기한 미상 → 빠른 순), 칸을 고르면 그 칸에서만(strict). 직원 대기 등록도 그 칸 수량을 미리 확인(예약 없음), 확정 모달에 등록 때 지정값이 기본으로 채워지고 관리자가 바꿀 수 있음(확정 시 Outbound.pick* 갱신). 지정 출고의 수량 증가 정정도 그 칸에서만. 취소·감소는 뺐던 칸으로 복원. 수주 출고 처리는 자동
 - `modules/stock/queries.ts` (재고현황은 **전부 DB 처리**):
   - `stockStatus`(0 → OUT, safetyStock>0 && stock ≤ safetyStock → LOW, else OK) — `statusWhere`가 같은 규칙을 Prisma where로 (LOW는 `prisma.product.fields.safetyStock` 컬럼 비교)
@@ -42,7 +46,8 @@
 - 보관위치 자동 배정 `assign.ts` `assignRandomLocations`: locationId 없는 상품만, 분류→유형(냉동식품→FROZEN, 유제품→REFRIGERATED, 그 외 AMBIENT, `CATEGORY_STORAGE`), `pg_advisory_xact_lock`으로 동시 실행 직렬화, 빈 칸 `ORDER BY random()`, 빈 칸 부족 시 남은 상품은 미배정으로 보고. 창고관리 화면 [위치 자동 배정] 버튼(확인 후 실행). 표시: 창고 카드 배정 칸·비율, 랙 목록 배정 수, 배치도 칸에 상품명, 재고현황 '위치' 칸, 입출고 폼 상품 선택 시 위치
 - 보관위치 직접 변경 `location.ts` `changeProductLocation`: 재고현황 원장 팝업의 `LocationEditor`(창고→랙→단→구획 선택, 랙은 `getRacksForPickerAction`으로 해당 창고만 로드, 구획 옵션에 배정 상품 표시). 자동배정과 같은 advisory lock. expectedLocationId 불일치 → 거부. 대상 칸 점유 시 교환(나 해제 → 상대를 내 원래 자리(없으면 해제) → 나 목표), 분류/창고유형 불일치(교환 상대 포함)는 경고. 경고가 있으면 status "confirm" 반환(변경 없음) → mode=set-confirmed + expectedOccupantId 일치 시에만 진행. 클라이언트는 확인받은 targetCode와 현재 선택이 같을 때만 [확인하고 변경] 표시. 해제(mode=clear) 지원. 이력 `ProductLocationHistory`(fromCode, toCode, swappedWithSku, reason) — 교환 시 양쪽 기록, 팝업에 최근 5건
 - 기본 보관위치(`Product.locationId`, 한 칸에 한 상품)는 "원래 자리" 의미로 유지. 실제 재고는 어느 칸이든 여러 상품 가능
-- 구획별 재고 1단계 완료(2026-10-03). 2단계: ~~위치 이동(MOVE)~~ 완료, ~~출고 위치 직접 지정~~ 완료, 보관 온도 검사, 배치도 칸 수량, 헤더 창고 선택 / 3단계: 유통기한 임박·만료 알림, 칸 단위 실사. 그 외: 랙/창고 비활성화
+- 창고·랙 비활성화(2026-10-04) `active.ts`: `Warehouse.isActive`·`Rack.isActive`(기본 true, 마이그레이션 `20261004073800_warehouse_rack_active`). 칸은 창고와 랙이 모두 사용 중일 때만 새 위치로 지정 가능 — 입고 위치·발주 입고 위치·원장 [위치 이동] 대상·보관위치 변경 대상은 서버에서 `inactiveLocationMessage(tx, locationId)`로 거부(창고 행 `FOR SHARE`), 자동 배정·위치 선택(`listRacksForPicker`, LocationEditor 창고 목록)에서 제외, 비활성 창고는 랙 추가 불가. 비활성화 조건: 그 범위 칸에 재고(수량>0)·기본 보관위치 상품·확정 대기 입고(locationId)·대기 출고(pickLocationId)가 없어야 함(있으면 건수·예시와 함께 거부). 자동 배정과 같은 advisory lock → 창고 행 `FOR UPDATE` 순서로 잠금, 이미 그 상태면 거부. 다시 사용은 조건 없음. 기존 재고 조회·출고·취소(역이력으로 비활성 칸에 복원될 수 있음, 위치 이동으로 옮김)는 그대로. 화면: 창고 상세 [비활성화](확인 후)/[다시 사용], 랙 표 '상태' 칸 버튼, 창고 카드·상세 '비활성' 배지, 재고현황 창고 필터에 '(비활성)' 표시. 감사 로그 WAREHOUSE_ACTIVE/INACTIVE, RACK_ACTIVE/INACTIVE
+- 구획별 재고 1단계 완료(2026-10-03). 2단계: ~~위치 이동(MOVE)~~ 완료, ~~출고 위치 직접 지정~~ 완료, ~~보관 온도 검사~~ 완료, ~~배치도 칸 수량~~ 완료, ~~창고 선택~~ 완료(재고현황 필터) / 3단계: ~~유통기한 임박·만료 알림~~ 완료, 칸 단위 실사. 그 외: ~~랙/창고 비활성화~~ 완료
 
 ## 수발주 (modules/order) — 2026-10-02
 - 모델: `TradeOrder`(type PURCHASE/SALES, orderNo PO-/SO-YYYYMMDD-NNN unique, partner, status OPEN/PARTIAL/DONE/CLOSED/CANCELLED, dueDate KST 자정, memo, version, requestId unique), `TradeOrderLine`(seq, productId unique per order, quantity>0, unitPrice?, processedQty CHECK 0~quantity). `Inbound.orderLineId?`, `Outbound.orderLineId?`
@@ -65,7 +70,7 @@
 - `proxy.ts`: 쿠키 없으면 `/login` (1차 확인만). **실제 확인은 페이지 `requirePageUser()` + `can()`, Server Action `authorize(perm)`** — 메뉴 숨김에만 의존하지 않음
 - 권한표 `modules/user/codes.ts` `PERMISSIONS`(화면·서버 공용):
   - 직원: `product.create`(대기로 등록, 판매가 입력 없음), `inbound.create`·`outbound.create`(대기로 등록, 단가 입력 없음), `stock.view`(조회만, 금액 제외)
-  - 관리자: 위 + `product.confirm`(확정·반려), `inbound.manage`·`outbound.manage`(확정·수정·취소·대기 삭제), `price.view`, `admin`(발주·수주, 배차·차량, 창고, 안전재고·위치 변경, 로그, 사용자)
+  - 관리자: 위 + `product.confirm`(확정·반려), `product.manage`(수정·비활성화·다시 사용), `inbound.manage`·`outbound.manage`(확정·수정·취소·대기 삭제), `price.view`, `admin`(발주·수주, 배차·차량, 창고, 안전재고·위치 변경, 로그, 사용자)
 - 금액 숨김은 서버에서 값을 내려주지 않는 방식(상품 판매가, 입고 단가·수정 기록의 단가, 재고현황 판매가·재고금액·요약 카드)
 - 관리자 화면 `/users`: 사용자 추가, 이름·역할·사용 여부 수정(version), 비밀번호 재설정(기존 세션 종료). 본인 역할·사용 여부 변경 불가, 활성 관리자 최소 1명 유지(advisory lock). 역할 변경·중지 시 해당 사용자 세션 삭제
 - 로그인 시도 제한 (2026-10-03, 마이그레이션 `20261003063758_login_throttle`): `LoginThrottle`(loginId PK, failCount CHECK >= 0, lockedUntil). 같은 아이디 연속 `LOGIN_LIMITS.maxFails`(5)회 실패 → `lockMinutes`(15)분 차단, 잠금 중엔 비밀번호를 비교하지 않음. 없는 아이디도 똑같이 세고 잠금(존재 여부 노출 방지). 실패 기록은 아이디별 advisory lock으로 직렬화, 잠금이 끝난 기록은 1부터 다시 셈. 성공·관리자 재설정·본인 변경 시 기록 삭제. 잠기는 순간 감사 로그 `LOGIN_LOCKED`(잠긴 동안의 시도는 기록 안 함). IP 기준 제한은 없음
@@ -75,6 +80,10 @@
 ## 상품 확정 · 입고 확정/취소 — 2026-10-02
 - `Product.status` PENDING/ACTIVE(기존 데이터 ACTIVE), createdBy/confirmedBy/confirmedAt. 직원 등록 = PENDING(price 0) → 관리자 확정(판매가 입력) 또는 반려(대기 상품만 실제 삭제, 사유는 감사 로그). 관리자 등록은 바로 ACTIVE
 - **대기 상품은** 입고·출고·주문·재고현황·위치 자동 배정·위치 변경에서 제외/거부
+- 상품 수정·비활성화(2026-10-04, `product.manage` = 관리자, `/products/new` 목록 행의 [수정]·[비활성화/다시 사용]):
+  - `ProductStatus.INACTIVE` 추가(마이그레이션 `product_inactive`). INACTIVE도 대기 상품과 같이 입고·출고·주문·재고현황·위치 배정·변경에서 제외/거부(모두 `status: ACTIVE` 조건). 목록은 기본 숨김, '비활성 포함' 체크(`?inactive=1`)로 표시
+  - 수정 대상: 품명·분류·판매가(ACTIVE만)·박스당 입수(BOX 단위 제외)·안전재고. **품목코드·기본단위·유통기한 관리는 수정 불가**(이력 의미 보존). 동시 수정 방지는 수정 대상 값 스냅샷(`productVersion`)을 hidden `version`으로 보내 서버가 행 잠금 후 비교(재고 변동으로 updatedAt이 바뀌어도 충돌하지 않음). 변경 없음이면 거부, 감사 로그 `PRODUCT_UPDATE`(전후 값)
+  - 비활성화 조건(`setProductActive`): 현재고 0, 확정 대기 입고·출고 없음, 진행 중(OPEN/PARTIAL·잔량 있음) 발주·수주 없음. 기본 보관위치는 해제하고 `ProductLocationHistory`에 기록. 대기 상품은 대상 아님(확정·반려 사용). 이미 그 상태면 거부. 다시 사용 시 위치는 비어 있음. 감사 로그 `PRODUCT_INACTIVE`·`PRODUCT_ACTIVE`
 - `Inbound.status` PENDING/CONFIRMED/CANCELLED(기존 CONFIRMED), createdBy/confirmedBy/cancelledBy, cancelReason. CHECK: 취소면 cancelledAt·cancelReason 필수, 대기면 orderLineId 없음(발주 입고는 즉시 확정)
   - 직원 등록 = PENDING, **재고 미반영**(StockMovement 없음, 단가 null). 관리자 등록은 바로 CONFIRMED + changeStock
   - 확정 `confirmInbound`: status·version 조건부 UPDATE → changeStock(INBOUND). 단가 입력 가능
@@ -97,7 +106,7 @@
 - 모델: `AuditLog`(category enum AuditCategory PRODUCT/INBOUND/OUTBOUND/STOCK/WAREHOUSE/ORDER/DISPATCH/VEHICLE/USER, action 작업코드, targetId?, targetLabel?, summary 한국어 한 줄, detail Json?(입력값·before/after), actorId?(FK 없음)·actor? "이름(아이디)" — `recordAudit`이 현재 로그인 사용자를 자동 기록, 요청 밖(시드)은 null, createdAt). 인덱스 (createdAt), (category, createdAt). 마이그레이션 `20261002120000_audit_log`
 - **추가만 가능**: DB 트리거 `AuditLog_no_update_delete`(BEFORE UPDATE OR DELETE)·`AuditLog_no_truncate`가 예외 발생. 앱에도 수정·삭제 함수/화면 없음
 - 기록: `recordAudit(tx, …)`를 **작업과 같은 트랜잭션**에서 호출 → 작업 롤백 시 로그도 없음, 로그 실패 시 작업 취소. 쓰기 작업을 새로 만들면 반드시 기록 추가
-- 기록 대상: 상품 등록, 입고/출고 등록·수정(`auditRevision`으로 바뀐 항목 전후, 일시는 KST), 안전재고 변경(값이 같으면 기록 안 함), 창고 추가·랙 추가·위치 자동 배정(대상 상품 있을 때)·보관위치 변경, 주문 등록·입고/출고 처리·잔량 종결·취소, 차량 등록·운행 중지/재개, 배차 등록·품목 추가/빼기·상태 변경
+- 기록 대상: 상품 등록, 입고/출고 등록·수정(`auditRevision`으로 바뀐 항목 전후, 일시는 KST), 안전재고 변경(값이 같으면 기록 안 함), 창고 추가·랙 추가·창고/랙 비활성화·다시 사용·위치 자동 배정(대상 상품 있을 때)·보관위치 변경, 주문 등록·입고/출고 처리·잔량 종결·취소, 차량 등록·운행 중지/재개, 배차 등록·품목 추가/빼기·상태 변경
 - 라벨: `codes.ts`(`AUDIT_ACTION_LABELS`, `AUDIT_FIELD_LABELS`, 구분 배지 색 `AUDIT_CATEGORY_TONE`)
 - 화면 `/logs`(사이드바 관리 > 로그): 구분·기간(KST, 종료일 포함)·대상/내용 검색, 최신순 50건씩 페이지, 내용 클릭 시 상세 펼침
 
@@ -122,7 +131,7 @@
 - 빈 상태·오류는 사용자가 이해할 한국어 문구로, 개발자용 오류는 로그로
 
 ## 헤더 · 대시보드 · 공통 UI (2026-10-02, 참조 목업 기준)
-- **헤더** `components/Header.tsx`(64px): 현재 위치 / 상품 검색(→ `/stock?q=`) / 날짜·시각(KST, `lib/datetime.ts formatKstNow`, 30초마다 갱신) / 재고 알림 벨(재고 없음·부족 수, → `/stock?status=short`) / 사용자 메뉴(이름·역할, 로그아웃). 사이드바 하단의 사용자·로그아웃은 헤더로 이동. 검색·알림은 `stock.view` 권한이 있을 때만 표시. 알림 수는 `app/layout.tsx`에서 `countShortStock()`으로 조회. **창고 선택은 재고가 상품 단위(창고별 재고 없음)라 넣지 않음** — 창고별 재고를 만들 때 추가
+- **헤더** `components/Header.tsx`(64px): 현재 위치 / 상품 검색(→ `/stock?q=`) / 날짜·시각(KST, `lib/datetime.ts formatKstNow`, 30초마다 갱신) / 재고 알림 벨(재고 없음·부족 수, → `/stock?status=short`) / 사용자 메뉴(이름·역할, 로그아웃). 사이드바 하단의 사용자·로그아웃은 헤더로 이동. 검색·알림은 `stock.view` 권한이 있을 때만 표시. 알림 수는 `app/layout.tsx`에서 `countShortStock()`으로 조회. **창고 선택은 헤더에 두지 않음** — 재고현황에만 적용되므로 재고현황 필터의 '창고'로 둔다
 - **대시보드** `/` (`app/page.tsx`, 집계 `modules/dashboard/queries.ts` 읽기 전용): 오늘의 운영 현황 KPI 4개(입고 건수·출고 건수·현재 재고 수량·재고 부족 상품) + 주요 알림(부족·품절 상위 5, 관리자는 확정 대기 상품·입고·출고 건수) + 최근 입출고 내역(확정 건 6개). 기간은 KST 하루(자정~자정), 입고·출고는 `CONFIRMED`만 집계하고 전일 대비 증감 표시. 재고 카드·알림은 `stock.view` 권한 필요, 대기 건수는 `admin`만
 - **KpiCard** `components/KpiCard.tsx`: 라벨+아이콘 / 큰 숫자+단위 / 증감(▲▼ 화살표+문구, 색만으로 구분하지 않음) 또는 보조 문구. `href`를 주면 해당 목록으로 이동. 부족·품절은 `tone`으로 노랑·빨강
 - **EmptyState** `components/EmptyState.tsx`: 아이콘+제목+안내 문구(+버튼). 표의 빈 행은 `<td colSpan className="p-0"><EmptyState …/></td>`로 통일(재고·입고·출고·상품·발주/수주·로그·차량·랙·재고 이력)
@@ -147,7 +156,7 @@
 
 ## 미결 / 추천 후보
 - 로그인 시도 제한, 본인 비밀번호 변경, 역할 세분화(입출고 담당·조회 전용 등)
-- 입고/출고 취소(전표 무효화 + 역이력), 상품 수정/비활성화
+- 입고/출고 취소(전표 무효화 + 역이력)
 - 거래처 마스터(공급처/출고처)
 - 유통기한/로트 관리(trackExpiry 활용, 선입선출), 박스 단위 환산 입출고
 - 기간별 집계·엑셀 내보내기, 배차관리 연동

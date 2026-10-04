@@ -8,6 +8,8 @@ import { getStockLedger } from "./queries";
 import { changeStockExpiry, moveStock, StockBucketError } from "./service";
 import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { getLocationHistory } from "@/modules/warehouse/location";
+import { storageMismatchWarning } from "@/modules/warehouse/assign";
+import { inactiveLocationMessage } from "@/modules/warehouse/active";
 import { recordAudit } from "@/modules/audit/service";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 
@@ -112,14 +114,24 @@ export async function changeStockExpiryAction(
   return { status: "success", message: `${quantity.toLocaleString()}개의 유통기한을 ${toExpiry}(으)로 저장했습니다.`, ts: Date.now() };
 }
 
+export type MoveStockActionState = {
+  /** confirm: 보관 온도가 맞지 않아 사용자 확인이 필요 (이동 안 됨) */
+  status: "idle" | "success" | "error" | "confirm";
+  message: string;
+  /** confirm 일 때 확인 대상 위치코드 */
+  confirmLocationCode?: string;
+  ts?: number;
+};
+
 /**
  * 재고 위치 이동 (관리자): 한 칸의 재고 일부/전부를 다른 위치로. 유통기한·총재고는 그대로
- * 폼: productId, locationId(""=미지정), expiryDate(""=미상), toLocationCode(필수), quantity
+ * 폼: productId, locationId(""=미지정), expiryDate(""=미상), toLocationCode(필수), quantity,
+ *     confirmedLocationCode(보관 온도 경고를 확인한 위치코드, 선택)
  */
 export async function moveStockAction(
-  _prev: SafetyStockActionState,
+  _prev: MoveStockActionState,
   fd: FormData
-): Promise<SafetyStockActionState> {
+): Promise<MoveStockActionState> {
   const fail = (message: string) => ({ status: "error" as const, message, ts: Date.now() });
   if (!(await authorize("admin"))) return fail(NO_PERMISSION_MESSAGE);
 
@@ -135,11 +147,24 @@ export async function moveStockAction(
   if (!INT_RE.test(rawQty) || Number(rawQty) < 1) return fail("수량은 1 이상의 정수여야 합니다.");
   const quantity = Number(rawQty);
   if (quantity > MAX_SAFETY_STOCK) return fail("수량이 너무 큽니다.");
+  const confirmedCode = text(fd, "confirmedLocationCode").toUpperCase();
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const to = await tx.location.findUnique({ where: { code: toCode }, select: { id: true } });
+    const warning = await prisma.$transaction(async (tx) => {
+      const to = await tx.location.findUnique({
+        where: { code: toCode },
+        select: { id: true, code: true, warehouse: { select: { name: true, storageType: true } } },
+      });
       if (!to) throw new StockBucketError(`존재하지 않는 위치코드입니다: ${toCode}`);
+      const inactive = await inactiveLocationMessage(tx, to.id);
+      if (inactive) throw new StockBucketError(inactive);
+      // 보관 온도 검사: 분류와 창고 유형이 다르면 같은 위치를 확인한 경우에만 진행
+      if (confirmedCode !== toCode) {
+        const product = await tx.product.findUnique({ where: { id: productId }, select: { name: true, category: true } });
+        if (!product) throw new StockBucketError("존재하지 않는 상품입니다.");
+        const w = storageMismatchWarning(product, to);
+        if (w) return w;
+      }
       const r = await moveStock(tx, {
         productId,
         from: { locationId, expiryDate: expiry.value },
@@ -163,7 +188,11 @@ export async function moveStockAction(
           after: { location: toCode },
         },
       });
+      return null;
     });
+    if (warning) {
+      return { status: "confirm", message: `${warning} 그래도 옮기려면 [그래도 이동]을 누르세요.`, confirmLocationCode: toCode, ts: Date.now() };
+    }
   } catch (e) {
     if (e instanceof StockBucketError) return fail(e.message);
     console.error("[stock] move failed", e);

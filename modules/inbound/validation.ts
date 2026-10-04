@@ -40,6 +40,8 @@ export type InboundCreateInput = InboundInput & {
   requestId: string;
   /** 유사 입고 경고를 확인하고 그래도 등록 */
   confirmDuplicate: boolean;
+  /** 보관 온도 경고를 확인한 위치코드 (지금 위치코드와 같을 때만 경고를 건너뜀) */
+  confirmedLocationCode: string | null;
 };
 
 export type InboundField = keyof InboundCreateInput;
@@ -106,6 +108,7 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
       locationCode,
       requestId: requestId.value,
       confirmDuplicate: parseConfirm(fd),
+      confirmedLocationCode: text(fd, "confirmedLocationCode").toUpperCase() || null,
     },
   };
 }

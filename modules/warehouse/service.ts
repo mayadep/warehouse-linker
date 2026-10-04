@@ -62,10 +62,11 @@ export async function createWarehouse(input: WarehouseInput) {
  */
 export async function addRacks(input: AddRacksInput) {
   return prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<{ id: string; code: string }[]>`
-      SELECT "id", "code" FROM "Warehouse" WHERE "id" = ${input.warehouseId} FOR UPDATE`;
+    const locked = await tx.$queryRaw<{ id: string; code: string; isActive: boolean }[]>`
+      SELECT "id", "code", "isActive" FROM "Warehouse" WHERE "id" = ${input.warehouseId} FOR UPDATE`;
     const wh = locked[0];
     if (!wh) throw new WarehouseError("존재하지 않는 창고입니다.");
+    if (!wh.isActive) throw new WarehouseError(`${wh.code}은(는) 비활성 창고입니다. 다시 사용으로 바꾼 뒤 랙을 추가하세요.`);
 
     const agg = await tx.rack.aggregate({
       where: { warehouseId: wh.id },
@@ -110,11 +111,11 @@ export async function addRacks(input: AddRacksInput) {
 
 export async function listWarehouses() {
   const rows = await prisma.warehouse.findMany({
-    orderBy: [{ storageType: "asc" }, { code: "asc" }],
+    orderBy: [{ isActive: "desc" }, { storageType: "asc" }, { code: "asc" }],
     include: { _count: { select: { racks: true, locations: true } } },
   });
   // 랙 구성 요약 (예: 4단×6구획 50개), 상품이 배정된 칸 수
-  const [configs, used] = await Promise.all([
+  const [configs, used, inactiveRacks] = await Promise.all([
     prisma.rack.groupBy({
       by: ["warehouseId", "levels", "binsPerLevel"],
       _count: { _all: true },
@@ -124,11 +125,14 @@ export async function listWarehouses() {
       where: { product: { isNot: null } },
       _count: { _all: true },
     }),
+    prisma.rack.groupBy({ by: ["warehouseId"], where: { isActive: false }, _count: { _all: true } }),
   ]);
   const usedMap = new Map(used.map((u) => [u.warehouseId, u._count._all]));
+  const inactiveMap = new Map(inactiveRacks.map((r) => [r.warehouseId, r._count._all]));
   return rows.map((w) => ({
     ...w,
     usedLocations: usedMap.get(w.id) ?? 0,
+    inactiveRacks: inactiveMap.get(w.id) ?? 0,
     rackConfigs: configs
       .filter((c) => c.warehouseId === w.id)
       .map((c) => ({ levels: c.levels, binsPerLevel: c.binsPerLevel, count: c._count._all })),
@@ -154,6 +158,18 @@ export async function listOccupiedLocations(warehouseId: string) {
   return prisma.location.findMany({
     where: { warehouseId, product: { isNot: null } },
     select: { code: true, rackId: true, product: { select: { sku: true, name: true } } },
+  });
+}
+
+/** 창고 안 칸별 재고 (배치도 수량 표시용, 배정 상품이 아닌 상품의 재고도 포함) */
+export async function listLocationBalances(warehouseId: string) {
+  return prisma.stockBalance.findMany({
+    where: { location: { warehouseId } },
+    select: {
+      quantity: true,
+      location: { select: { code: true } },
+      product: { select: { sku: true, name: true, baseUnit: true } },
+    },
   });
 }
 

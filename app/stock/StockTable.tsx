@@ -18,6 +18,10 @@ export type StockRow = {
   boxQty: number;
   price: number | null; // 금액 권한이 없으면 null
   stock: number;
+  /** 헤더에서 창고를 골랐을 때 그 창고 칸의 재고 합계 (전체 창고면 null) */
+  warehouseStock: number | null;
+  /** 재고가 남은 칸 중 가장 빠른 유통기한 (없으면 null) */
+  nearestExpiry: { date: string; state: "EXPIRED" | "SOON" | "OK"; days: number } | null;
   safetyStock: number;
   status: "OUT" | "LOW" | "OK";
   stockValue: number | null;
@@ -32,10 +36,10 @@ const STATUS_BADGE: Record<StockRow["status"], { label: string; tone: "red" | "a
 };
 
 /** 36EA, 입수 20 → "1박스+16" */
-function boxText(r: StockRow): string | null {
-  if (r.baseUnit === "BOX" || r.boxQty <= 1 || r.stock <= 0) return null;
-  const boxes = Math.floor(r.stock / r.boxQty);
-  const rest = r.stock % r.boxQty;
+function boxText(r: StockRow, qty: number): string | null {
+  if (r.baseUnit === "BOX" || r.boxQty <= 1 || qty <= 0) return null;
+  const boxes = Math.floor(qty / r.boxQty);
+  const rest = qty % r.boxQty;
   if (boxes === 0) return null;
   return rest ? `${boxes}박스+${rest}` : `${boxes}박스`;
 }
@@ -64,6 +68,7 @@ export default function StockTable({
             <th className="left">품명</th>
             <th>분류</th>
             <th>위치</th>
+            <th>유통기한</th>
             <th>단위</th>
             <th className="num">현재고</th>
             <th className="num">안전재고</th>
@@ -77,14 +82,15 @@ export default function StockTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={showPrice ? 12 : 10} className="p-0">
+              <td colSpan={showPrice ? 13 : 11} className="p-0">
                 <EmptyState icon={SearchXIcon} title="조건에 맞는 상품이 없습니다." description="검색어나 상태 조건을 바꿔 보세요." />
               </td>
             </tr>
           )}
           {rows.map((r) => {
             const badge = STATUS_BADGE[r.status];
-            const box = boxText(r);
+            const qty = r.warehouseStock ?? r.stock;
+            const box = boxText(r, qty);
             return (
               <tr
                 key={r.id}
@@ -106,10 +112,26 @@ export default function StockTable({
                 </td>
                 <td>{r.category}</td>
                 <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">{r.locationCode ?? "-"}</td>
+                <td className="whitespace-nowrap tabular-nums">
+                  {r.nearestExpiry ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={r.nearestExpiry.state === "OK" ? "text-muted-foreground" : ""}>{r.nearestExpiry.date}</span>
+                      {r.nearestExpiry.state === "EXPIRED" && <Badge variant="red">만료</Badge>}
+                      {r.nearestExpiry.state === "SOON" && (
+                        <Badge variant="amber">{r.nearestExpiry.days === 0 ? "D-day" : `D-${r.nearestExpiry.days}`}</Badge>
+                      )}
+                    </span>
+                  ) : (
+                    "-"
+                  )}
+                </td>
                 <td>{r.baseUnit}</td>
                 <td className="num whitespace-nowrap font-medium">
-                  {r.stock.toLocaleString()}
+                  {qty.toLocaleString()}
                   {box && <span className="ml-1 text-xs font-normal text-muted-foreground">({box})</span>}
+                  {r.warehouseStock !== null && r.warehouseStock !== r.stock && (
+                    <span className="block text-xs font-normal text-muted-foreground">전체 {r.stock.toLocaleString()}</span>
+                  )}
                 </td>
                 <td className="num">{r.safetyStock ? r.safetyStock.toLocaleString() : "-"}</td>
                 <td>

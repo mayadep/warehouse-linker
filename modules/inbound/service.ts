@@ -12,6 +12,8 @@ import type { CurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import { adjustOrderLineProcessed, OrderLineLimitError } from "@/modules/order/lines";
 import { auditRevision, recordAudit } from "@/modules/audit/service";
+import { storageMismatchWarning } from "@/modules/warehouse/assign";
+import { inactiveLocationMessage } from "@/modules/warehouse/active";
 
 export class InboundError extends Error {}
 /** 다른 사용자가 먼저 수정한 경우 */
@@ -35,6 +37,20 @@ export async function findSimilarInbound(input: InboundCreateInput, now = new Da
     orderBy: { createdAt: "desc" },
     select: { createdAt: true, quantity: true, supplier: true, product: { select: { name: true } } },
   });
+}
+
+/** 보관 온도 경고: 지정한 위치의 창고 유형이 상품 분류와 다르면 문구 (위치 미지정·없는 위치는 null) */
+export async function findInboundStorageWarning(input: InboundCreateInput): Promise<string | null> {
+  if (!input.locationCode) return null;
+  const [product, location] = await Promise.all([
+    prisma.product.findUnique({ where: { id: input.productId }, select: { name: true, category: true } }),
+    prisma.location.findUnique({
+      where: { code: input.locationCode },
+      select: { code: true, warehouse: { select: { name: true, storageType: true } } },
+    }),
+  ]);
+  if (!product || !location) return null; // 존재 여부 오류는 등록 단계에서 안내
+  return storageMismatchWarning(product, location);
 }
 
 /**
@@ -67,12 +83,15 @@ async function createInboundTx(input: InboundCreateInput, actor: CurrentUser) {
       select: { id: true, name: true, status: true, locationId: true },
     });
     if (!product) throw new InboundError("존재하지 않는 상품입니다.");
+    if (product.status === "INACTIVE") throw new InboundError(`${product.name}은(는) 비활성(단종) 상품입니다. 상품등록에서 다시 사용으로 바꾼 뒤 입고하세요.`);
     if (product.status !== "ACTIVE") throw new InboundError(`${product.name}은(는) 아직 확정되지 않은 상품입니다. 관리자 확정 후 입고하세요.`);
 
     const location = input.locationCode
       ? await tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true } })
       : null;
     if (input.locationCode && !location) throw new InboundError(`존재하지 않는 위치코드입니다: ${input.locationCode}`);
+    const inactive = location ? await inactiveLocationMessage(tx, location.id) : null;
+    if (inactive) throw new InboundError(inactive);
 
     const unitCost = confirmed ? input.unitCost : null;
     const now = new Date();

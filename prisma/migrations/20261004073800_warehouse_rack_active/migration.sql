@@ -1,0 +1,3 @@
+-- 창고·랙 비활성화
+ALTER TABLE "Warehouse" ADD COLUMN "isActive" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "Rack" ADD COLUMN "isActive" BOOLEAN NOT NULL DEFAULT true;

@@ -90,6 +90,7 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
         select: { id: true, name: true, status: true, stock: true },
       });
       if (!product) throw new OutboundError("존재하지 않는 상품입니다.");
+      if (product.status === "INACTIVE") throw new OutboundError(`${product.name}은(는) 비활성(단종) 상품이라 출고할 수 없습니다.`);
       if (product.status !== "ACTIVE") throw new OutboundError("확정되지 않은 상품은 출고할 수 없습니다.");
       if (!confirmed && product.stock < input.quantity) {
         throw new OutboundError(

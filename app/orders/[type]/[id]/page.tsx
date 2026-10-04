@@ -54,6 +54,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
     baseUnit: l.product.baseUnit,
     remaining: l.quantity - l.processedQty,
     stock: l.product.stock,
+    locationCode: l.product.location?.code ?? null,
   }));
 
   return (

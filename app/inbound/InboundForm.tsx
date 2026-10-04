@@ -194,6 +194,7 @@ export default function InboundForm({
           className="col-span-4 flex items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
           <p>{state.message}</p>
+          <input type="hidden" name="confirmedLocationCode" value={state.confirmLocationCode ?? ""} />
           <button
             name="confirmDuplicate"
             value="1"

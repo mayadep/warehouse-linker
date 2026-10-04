@@ -13,6 +13,17 @@ export function storageTypeForCategory(category: string): StorageTypeCode {
   return CATEGORY_STORAGE[category] ?? "AMBIENT";
 }
 
+/** 보관 온도 검사: 상품 분류의 보관 유형과 칸이 속한 창고 유형이 다르면 경고 문구, 맞으면 null */
+export function storageMismatchWarning(
+  product: { name: string; category: string },
+  location: { code: string; warehouse: { name: string; storageType: StorageTypeCode } }
+): string | null {
+  const want = storageTypeForCategory(product.category);
+  const actual = location.warehouse.storageType;
+  if (want === actual) return null;
+  return `보관 온도가 맞지 않습니다: ${product.name}은(는) ${product.category}(${STORAGE_TYPE_LABELS[want]} 보관)인데 ${location.code}은(는) ${location.warehouse.name}(${STORAGE_TYPE_LABELS[actual]})입니다.`;
+}
+
 type Counts = Record<StorageTypeCode, number>;
 const zero = (): Counts => ({ REFRIGERATED: 0, FROZEN: 0, AMBIENT: 0 });
 
@@ -46,7 +57,9 @@ export async function assignRandomLocations() {
           SELECT l."id"
           FROM "Location" l
           JOIN "Warehouse" w ON w."id" = l."warehouseId"
+          JOIN "Rack" r ON r."id" = l."rackId"
           WHERE w."storageType" = ${type}::"StorageType"
+            AND w."isActive" AND r."isActive"
             AND NOT EXISTS (SELECT 1 FROM "Product" p WHERE p."locationId" = l."id")
           ORDER BY random()
           LIMIT ${ids.length}`;

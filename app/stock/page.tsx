@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { listStockStatus, parseStockFilter, type StockFilter } from "@/modules/stock/queries";
+import { EXPIRY_SOON_DAYS, expiryStateOf, listStockStatus, parseStockFilter, type StockFilter } from "@/modules/stock/queries";
 import { listWarehouseOptions } from "@/modules/warehouse/location";
 import StockTable, { type StockRow } from "./StockTable";
 import Forbidden from "@/components/Forbidden";
@@ -22,6 +22,8 @@ function pageHref(filter: StockFilter, page: number): string {
   const sp = new URLSearchParams();
   if (filter.q) sp.set("q", filter.q);
   if (filter.category) sp.set("category", filter.category);
+  if (filter.warehouse) sp.set("warehouse", filter.warehouse);
+  if (filter.expiry) sp.set("expiry", filter.expiry);
   if (filter.status !== "all") sp.set("status", filter.status);
   if (filter.sort !== "sku") sp.set("sort", filter.sort);
   if (page > 1) sp.set("page", String(page));
@@ -52,10 +54,11 @@ export default async function StockPage({
   const showPrice = can(user.role, "price.view");
   const canEdit = can(user.role, "admin"); // 안전재고·보관위치 변경
   const filter = parseStockFilter(await searchParams);
-  const [{ rows, summary, categories, pagination }, warehouses] = await Promise.all([
-    listStockStatus(filter),
-    canEdit ? listWarehouseOptions() : Promise.resolve([]),
-  ]);
+  // 창고 목록: 창고 필터(재고 조회 권한자 모두) + 보관위치 변경(관리자)
+  const warehouses = await listWarehouseOptions();
+  const selectedWarehouse = warehouses.find((w) => w.id === filter.warehouse) ?? null;
+  if (!selectedWarehouse) filter.warehouse = ""; // 없는 창고 id 는 무시
+  const { rows, summary, categories, pagination } = await listStockStatus(filter);
   const { page, totalPages, matched, pageSize } = pagination;
 
   const tableRows: StockRow[] = rows.map((r) => ({
@@ -70,6 +73,8 @@ export default async function StockPage({
     // 금액 권한이 없으면 내려주지 않음
     price: showPrice ? r.price : null,
     stock: r.stock,
+    warehouseStock: r.warehouseStock,
+    nearestExpiry: r.nearestExpiry ? { date: r.nearestExpiry, ...expiryStateOf(r.nearestExpiry) } : null,
     safetyStock: r.safetyStock,
     status: r.status,
     stockValue: showPrice ? r.stockValue : null,
@@ -89,6 +94,14 @@ export default async function StockPage({
   return (
     <div>
       <h2 className="mb-6 text-2xl font-semibold tracking-tight">재고현황</h2>
+      {selectedWarehouse && (
+        <p className="-mt-4 mb-4 text-sm text-muted-foreground">
+          <b className="font-semibold text-foreground">
+            {selectedWarehouse.code} {selectedWarehouse.name}
+          </b>{" "}
+          기준: 그 창고에 재고가 있거나 기본 위치가 그 창고인 상품만 보이고, 현재고·재고금액은 그 창고 칸의 합계입니다. 상태·정렬·위 요약은 전체 재고 기준입니다.
+        </p>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         {cards.map((c) => {
@@ -123,11 +136,26 @@ export default async function StockPage({
             </option>
           ))}
         </NativeSelect>
+        <NativeSelect name="warehouse" defaultValue={filter.warehouse} className="[&_select]:bg-card">
+          <option value="">전체 창고</option>
+          {warehouses.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.code} {w.name}
+              {w.isActive ? "" : " (비활성)"}
+            </option>
+          ))}
+        </NativeSelect>
         <NativeSelect name="status" defaultValue={filter.status} className="[&_select]:bg-card">
           <option value="all">전체 상태</option>
           <option value="short">부족 + 재고 없음</option>
           <option value="low">부족</option>
           <option value="out">재고 없음</option>
+        </NativeSelect>
+        <NativeSelect name="expiry" defaultValue={filter.expiry} className="[&_select]:bg-card">
+          <option value="">전체 유통기한</option>
+          <option value="alert">만료 + 임박</option>
+          <option value="expired">만료</option>
+          <option value="soon">임박 ({EXPIRY_SOON_DAYS}일 이내)</option>
         </NativeSelect>
         <NativeSelect name="sort" defaultValue={filter.sort} className="[&_select]:bg-card">
           <option value="sku">코드순</option>
@@ -148,7 +176,7 @@ export default async function StockPage({
             ` · ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, matched).toLocaleString()} 표시`}
         </span>
       </form>
-      <StockTable rows={tableRows} warehouses={warehouses} showPrice={showPrice} canEdit={canEdit} />
+      <StockTable rows={tableRows} warehouses={canEdit ? warehouses : []} showPrice={showPrice} canEdit={canEdit} />
 
       {totalPages > 1 && (
         <nav className="mt-5 flex flex-wrap items-center justify-center gap-1" aria-label="페이지">
