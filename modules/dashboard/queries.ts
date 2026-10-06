@@ -59,7 +59,7 @@ export async function getPendingCounts() {
 }
 
 /** 최근 확정된 입고·출고 (최신순) */
-export async function getRecentActivity(limit = 6): Promise<ActivityRow[]> {
+export async function getRecentActivity(limit = 6): Promise<{ inbound: ActivityRow[]; outbound: ActivityRow[] }> {
   const [ins, outs] = await Promise.all([
     prisma.inbound.findMany({
       where: { status: "CONFIRMED" },
@@ -74,11 +74,10 @@ export async function getRecentActivity(limit = 6): Promise<ActivityRow[]> {
       select: { id: true, quantity: true, customer: true, shippedAt: true, product: { select: { name: true, baseUnit: true } } },
     }),
   ]);
-  const rows: ActivityRow[] = [
-    ...ins.map((r) => ({ id: r.id, kind: "IN" as const, productName: r.product.name, quantity: r.quantity, unit: r.product.baseUnit, partner: r.supplier, at: r.receivedAt })),
-    ...outs.map((r) => ({ id: r.id, kind: "OUT" as const, productName: r.product.name, quantity: r.quantity, unit: r.product.baseUnit, partner: r.customer, at: r.shippedAt })),
-  ];
-  return rows.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
+  return {
+    inbound: ins.map((r): ActivityRow => ({ id: r.id, kind: "IN", productName: r.product.name, quantity: r.quantity, unit: r.product.baseUnit, partner: r.supplier, at: r.receivedAt })),
+    outbound: outs.map((r): ActivityRow => ({ id: r.id, kind: "OUT", productName: r.product.name, quantity: r.quantity, unit: r.product.baseUnit, partner: r.customer, at: r.shippedAt })),
+  };
 }
 
 /** 재고 없음·부족 상품 (재고 적은 순) */

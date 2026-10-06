@@ -112,11 +112,11 @@ export default async function StockPage({
             </>
           );
           return c.href ? (
-            <Link key={c.label} href={c.href} className="rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
+            <Link key={c.label} href={c.href} className="rounded-xl border bg-card p-4 shadow-card transition-colors hover:border-indigo-300 hover:bg-indigo-50/40">
               {body}
             </Link>
           ) : (
-            <div key={c.label} className="rounded-xl border bg-card p-4 shadow-xs">
+            <div key={c.label} className="rounded-xl border bg-card p-4 shadow-card">
               {body}
             </div>
           );

@@ -204,7 +204,7 @@ function NativeSelect({
         data-size={size}
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        className="h-9 w-full min-w-0 appearance-none rounded-lg border border-input bg-card py-1 pr-8 pl-3 text-sm transition-colors outline-none select-none selection:bg-primary selection:text-primary-foreground placeholder:text-[#98a2b3] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-primary/15 disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=sm]:h-8 data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-[size=sm]:py-0.5"
+        className="h-9 w-full min-w-0 appearance-none rounded-lg border border-input bg-card py-1 pr-8 pl-3 text-sm transition-colors outline-none select-none selection:bg-primary selection:text-primary-foreground placeholder:text-text-placeholder focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-primary/15 disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=sm]:h-8 data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-[size=sm]:py-0.5"
         onMouseDown={(e) => {
           onMouseDown?.(e)
           if (e.defaultPrevented || e.button !== 0) return

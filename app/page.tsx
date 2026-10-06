@@ -3,10 +3,11 @@ import { connection } from "next/server";
 import { AlertTriangleIcon, BoxesIcon, CalendarClockIcon, CheckCircle2Icon, ClipboardListIcon, PackageIcon, TruckIcon } from "lucide-react";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import { getPendingCounts, getRecentActivity, getShortProducts, getTodayOverview } from "@/modules/dashboard/queries";
+import { getPendingCounts, getRecentActivity, getShortProducts, getTodayOverview, type ActivityRow } from "@/modules/dashboard/queries";
 import { countExpiryAlerts, EXPIRY_SOON_DAYS } from "@/modules/stock/queries";
 import KpiCard, { type KpiDelta } from "@/components/KpiCard";
 import EmptyState from "@/components/EmptyState";
+import { Card, CardHeader } from "@/components/Card";
 import { Badge } from "@/components/ui/badge";
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", {
@@ -27,6 +28,32 @@ function deltaOf(today: number, prev: number): KpiDelta {
   return { text, direction };
 }
 
+function RecentSection({ title, rows, emptyTitle, emptyDesc }: { title: string; rows: ActivityRow[]; emptyTitle: string; emptyDesc: string }) {
+  return (
+    <Card>
+      <CardHeader title={title} />
+      {rows.length === 0 ? (
+        <EmptyState title={emptyTitle} description={emptyDesc} />
+      ) : (
+        <ul className="divide-y">
+          {rows.map((r) => (
+            <li key={`${r.kind}-${r.id}`} className="flex items-center gap-3 py-2.5 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                {r.productName}
+                {r.partner && <span className="ml-2 text-xs text-muted-foreground">{r.partner}</span>}
+              </span>
+              <span className="w-24 text-right font-semibold tabular-nums">
+                {r.quantity.toLocaleString()} {r.unit}
+              </span>
+              <span className="w-28 text-right text-xs text-muted-foreground tabular-nums">{timeFmt.format(r.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export default async function DashboardPage() {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
   const user = await requirePageUser();
@@ -43,8 +70,8 @@ export default async function DashboardPage() {
   // 유통기한 알림 (만료 = 빨강, 임박 = 노랑)
   const expiryItems = expiry
     ? [
-        { label: "유통기한 만료", count: expiry.expired, href: "/stock?expiry=expired", tone: "bg-[#fff0f0] text-[#b42323]" },
-        { label: `유통기한 임박(${EXPIRY_SOON_DAYS}일 이내)`, count: expiry.soon, href: "/stock?expiry=soon", tone: "bg-[#fff7e1] text-[#996b00]" },
+        { label: "유통기한 만료", count: expiry.expired, href: "/stock?expiry=expired", tone: "bg-danger-soft text-danger-foreground" },
+        { label: `유통기한 임박(${EXPIRY_SOON_DAYS}일 이내)`, count: expiry.soon, href: "/stock?expiry=soon", tone: "bg-warning-soft text-warning-foreground" },
       ].filter((p) => p.count > 0)
     : [];
   const shortTotal = overview.outCount + overview.lowCount;
@@ -87,13 +114,15 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {canViewStock && (
-          <section className="rounded-xl border bg-card p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-[15px] font-semibold">주요 알림</h3>
-              <Link href="/stock?status=short" className="text-xs text-primary hover:underline">
-                더보기
-              </Link>
-            </div>
+          <Card>
+            <CardHeader
+              title="주요 알림"
+              action={
+                <Link href="/stock?status=short" className="text-xs text-primary hover:underline">
+                  더보기
+                </Link>
+              }
+            />
             {expiryItems.length > 0 && (
               <ul className="mb-3 flex flex-wrap gap-2">
                 {expiryItems.map((p) => (
@@ -110,7 +139,7 @@ export default async function DashboardPage() {
               <ul className="mb-3 flex flex-wrap gap-2">
                 {pendingItems.map((p) => (
                   <li key={p.label}>
-                    <Link href={p.href} className="flex items-center gap-1.5 rounded-lg bg-[#fff7e1] px-3 py-1.5 text-xs font-medium text-[#996b00]">
+                    <Link href={p.href} className="flex items-center gap-1.5 rounded-lg bg-warning-soft px-3 py-1.5 text-xs font-medium text-warning-foreground">
                       <ClipboardListIcon className="size-3.5" aria-hidden="true" />
                       {p.label} {p.count}건
                     </Link>
@@ -127,40 +156,18 @@ export default async function DashboardPage() {
                     <Badge variant={p.stock <= 0 ? "red" : "amber"}>{p.stock <= 0 ? "품절" : "부족"}</Badge>
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
                     <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>
-                    <span className={`w-24 text-right font-semibold tabular-nums ${p.stock <= 0 ? "text-[#e05252]" : "text-[#d89b18]"}`}>
+                    <span className={`w-24 text-right font-semibold tabular-nums ${p.stock <= 0 ? "text-destructive" : "text-warning"}`}>
                       {p.stock.toLocaleString()} {p.baseUnit}
                     </span>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
+          </Card>
         )}
 
-        <section className="rounded-xl border bg-card p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-[15px] font-semibold">최근 입출고 내역</h3>
-          </div>
-          {recent.length === 0 ? (
-            <EmptyState title="확정된 입출고 내역이 없습니다." description="입고나 출고가 확정되면 최근 내역이 여기에 표시됩니다." />
-          ) : (
-            <ul className="divide-y">
-              {recent.map((r) => (
-                <li key={`${r.kind}-${r.id}`} className="flex items-center gap-3 py-2.5 text-sm">
-                  <Badge variant={r.kind === "IN" ? "indigo" : "red"}>{r.kind === "IN" ? "입고" : "출고"}</Badge>
-                  <span className="min-w-0 flex-1 truncate">
-                    {r.productName}
-                    {r.partner && <span className="ml-2 text-xs text-muted-foreground">{r.partner}</span>}
-                  </span>
-                  <span className="w-24 text-right font-semibold tabular-nums">
-                    {r.quantity.toLocaleString()} {r.unit}
-                  </span>
-                  <span className="w-28 text-right text-xs text-muted-foreground tabular-nums">{timeFmt.format(r.at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <RecentSection title="최근 입고 내역" rows={recent.inbound} emptyTitle="확정된 입고 내역이 없습니다." emptyDesc="입고가 확정되면 최근 내역이 여기에 표시됩니다." />
+        <RecentSection title="최근 출고 내역" rows={recent.outbound} emptyTitle="확정된 출고 내역이 없습니다." emptyDesc="출고가 확정되면 최근 내역이 여기에 표시됩니다." />
       </div>
     </div>
   );

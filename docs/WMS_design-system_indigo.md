@@ -163,6 +163,27 @@ Text: #2459A6
 
 Badge, Text, Icon, 상태값을 함께 사용한다.
 
+## 4.1 Design Token 매핑 (`app/globals.css`)
+
+색상·그림자는 CSS 변수(토큰)로 정의하고 Tailwind 유틸리티로 사용한다.
+컴포넌트에 `#hex`, `rgba()`, `shadow-[...]` 같은 값을 직접 쓰지 않는다.
+새 색이 필요하면 먼저 `globals.css`의 `:root`와 `@theme inline`에 토큰을 추가한 뒤 사용한다.
+
+| 용도 | 토큰 | 유틸리티 예 |
+| --- | --- | --- |
+| Success 기본 / 배경 / 텍스트 | `--success` `--success-soft` `--success-foreground` | `text-success` `bg-success-soft` `text-success-foreground` |
+| Warning 기본 / 배경 / 텍스트 | `--warning` `--warning-soft` `--warning-foreground` | `text-warning` `bg-warning-soft` `text-warning-foreground` |
+| Danger 기본 | `--destructive` | `text-destructive` `bg-destructive` |
+| Danger 배경 / 텍스트 | `--danger-soft` `--danger-foreground` | `bg-danger-soft` `text-danger-foreground` |
+| Info 기본 / 배경 / 텍스트 | `--info` `--info-soft` `--info-foreground` | `bg-info-soft` `text-info-foreground` |
+| Primary 100 (강조 배경) | `--primary-soft` | `bg-primary-soft` |
+| Primary 300 (카드 hover 테두리) | `--primary-border` | `hover:border-primary-border` |
+| 표 헤더 / 행 hover / 행 선택 | `--surface-subtle` `--surface-hover` `--surface-selected` | `bg-surface-subtle` |
+| 보조 버튼 텍스트 / placeholder | `--text-body` `--text-placeholder` | `text-text-body` |
+| 카드 그림자 | `--shadow-card` | `shadow-card` |
+
+Badge variant ↔ 토큰: `gray`=`muted`, `slate`=`border`, `indigo`=`primary-soft`, `sky`=`info-soft`, `green`=`success-soft`, `amber`=`warning-soft`, `red`=`danger-soft`.
+
 ---
 
 # 5. Typography
@@ -399,6 +420,16 @@ Padding: 20px
 ```text
 Radius: 14px
 Padding: 24px
+```
+
+구현은 `components/Card.tsx`의 `Card` / `CardHeader`를 사용한다.
+`rounded-xl border bg-card p-5 shadow-card`를 페이지마다 직접 쓰지 않는다.
+
+```text
+<Card>                      → Standard (radius 12 · padding 20)
+<Card size="large">         → Large (radius 14 · padding 24)
+<Card size="compact">       → 목록형 작은 카드 (radius 12 · padding 16)
+<CardHeader title action /> → 제목 + 우측 액션(더보기 링크 등)
 ```
 
 Card 안에 Card를 반복해서 중첩하지 않는다.
@@ -719,6 +750,10 @@ Shadow는 최소한으로 사용한다.
 0 1px 3px rgba(15, 23, 42, 0.04)
 ```
 
+토큰: `--shadow-card` → `shadow-card` (카드는 항상 이 토큰을 사용한다)
+
+`--shadow-elevated` → `shadow-elevated` (Dropdown / Popover)
+
 ### Elevated
 
 ```css
@@ -968,6 +1003,16 @@ AI가 새로운 화면을 만들 때 자체적으로 새로운 색상이나 스�
 ```
 
 기존 Design Token과 공통 컴포넌트를 우선 사용한다.
+
+```text
+❌ className에 #hex / rgba() 직접 사용  (예: bg-[#fff7e1])
+❌ shadow-[...] 등 임의 값(arbitrary value) 그림자
+❌ 카드 마크업(rounded-xl border bg-card ...) 복붙
+✅ 토큰 유틸리티 (bg-warning-soft, shadow-card)
+✅ components/Card.tsx, Badge, KpiCard 등 공통 컴포넌트
+```
+
+토큰이 없는 값이 필요하면 §4.1 표에 맞춰 `globals.css`에 토큰을 먼저 추가하고 이 문서도 함께 갱신한다.
 
 ---
 

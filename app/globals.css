@@ -39,6 +39,27 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-foreground: var(--info-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border: var(--primary-border);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-text-body: var(--text-body);
+  --color-text-placeholder: var(--text-placeholder);
+  /* Card shadow (디자인 시스템 권장) */
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-elevated: 0 4px 12px rgba(15, 23, 42, 0.08);
   /* Small 6 · Default 8 · Card 12 · Large 14 */
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -66,7 +87,25 @@
   --muted-foreground: #526078; /* Text Secondary */
   --accent: #f3f6ff;
   --accent-foreground: #1d3a8a;
-  --destructive: #e05252;
+  --destructive: #e05252; /* Danger */
+  --danger-soft: #fff0f0; /* Danger 배경 */
+  --danger-foreground: #b42323; /* Danger 텍스트 */
+  --warning: #d89b18; /* Warning */
+  --warning-soft: #fff7e1; /* Warning 배경 */
+  --warning-foreground: #996b00; /* Warning 텍스트 */
+  --success: #16a67a; /* Success */
+  --success-soft: #eaf8f3; /* Success 배경 */
+  --success-foreground: #087a5b; /* Success 텍스트 */
+  --info: #3b82f6; /* Info */
+  --info-soft: #eef5ff; /* Info 배경 */
+  --info-foreground: #2459a6; /* Info 텍스트 */
+  --primary-soft: #e8edff; /* Primary 100 · 강조 배지 배경 */
+  --primary-border: #9bb0ff; /* Primary 300 · 카드 hover 테두리 */
+  --surface-subtle: #f8fafc; /* 표 헤더 */
+  --surface-hover: #f7f9fd; /* 표 행 hover */
+  --surface-selected: #f0f4ff; /* 표 행 선택 */
+  --text-body: #344054; /* 보조 버튼 텍스트 */
+  --text-placeholder: #98a2b3; /* placeholder */
   --border: #e3e8f0;
   --input: #d3dae6; /* Border Strong */
   --ring: #6b82f5; /* Border Focus */
@@ -101,7 +140,7 @@
   }
   input::placeholder,
   textarea::placeholder {
-    color: #98a2b3;
+    color: var(--text-placeholder);
   }
   /* 네이티브 select 펼침 목록 배경 */
   select,
@@ -135,7 +174,7 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background-color: #f8fafc;
+    background-color: var(--surface-subtle);
     box-shadow: inset 0 -1px 0 var(--border);
     font-size: 12px;
     font-weight: 600;
@@ -147,10 +186,10 @@
     transition: background-color 150ms ease-out;
   }
   .data-table tbody tr:hover {
-    background-color: #f7f9fd;
+    background-color: var(--surface-hover);
   }
   .data-table tbody tr[aria-selected="true"] {
-    background-color: #f0f4ff;
+    background-color: var(--surface-selected);
   }
   .data-table tbody tr:last-child {
     border-bottom: 0;

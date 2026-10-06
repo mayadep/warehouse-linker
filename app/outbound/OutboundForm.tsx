@@ -95,16 +95,25 @@ export default function OutboundForm({
   const err = state.status === "error" ? state.errors ?? {} : {};
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="flex max-w-xl flex-col gap-4" noValidate>
-      <div className="text-sm">
-        <span>상품</span>
+    <form
+      ref={formRef}
+      onSubmit={onSubmit}
+      className="grid grid-cols-4 gap-x-4 gap-y-3 rounded-lg border bg-card p-4"
+      noValidate
+    >
+      <label className="col-span-2 text-sm">
+        상품 검색
         <Input
-          className={`${input} mb-2`}
+          className={input}
           placeholder="코드·품명·분류로 검색"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)} />
+      </label>
+      <div className="col-span-2 text-sm">
+        <span>상품</span>
         <NativeSelect
           name="productId"
+          aria-label="상품"
           className={input}
           value={productId}
           onChange={(e) => onSelectProduct(e.target.value)}
@@ -132,94 +141,89 @@ export default function OutboundForm({
         {err.productId && <span className={errText}>{err.productId}</span>}
       </div>
 
-      <div className="flex gap-4">
-        <label className="flex-1 text-sm">
-          출고 수량
-          <Input
-            name="quantity"
-            type="number"
-            min={1}
-            max={selected?.stock}
-            step={1}
-            required
-            className={`${input} ${overStock ? "border-red-400" : ""}`}
-            placeholder="0"
-            value={quantityText}
-            onChange={(e) => setQuantityText(e.target.value)} />
-          {overStock && (
-            <span className={errText}>현재고({selected.stock.toLocaleString()})보다 많습니다.</span>
-          )}
-          {err.quantity && <span className={errText}>{err.quantity}</span>}
-        </label>
-        {/* 직원은 단가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
-        {showPrice && (
-          <label className="flex-1 text-sm">
-            출고단가 (원, 기본 판매가)
-            <Input
-              name="unitPrice"
-              type="number"
-              min={0}
-              step={1}
-              className={input}
-              placeholder="0"
-              value={unitPriceText}
-              onChange={(e) => setUnitPriceText(e.target.value)} />
-            {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
-          </label>
-        )}
-      </div>
-
       <label className="text-sm">
+        출고 수량
+        <Input
+          name="quantity"
+          type="number"
+          min={1}
+          max={selected?.stock}
+          step={1}
+          required
+          className={`${input} text-right tabular-nums ${overStock ? "border-red-400" : ""}`}
+          placeholder="0"
+          value={quantityText}
+          onChange={(e) => setQuantityText(e.target.value)} />
+        {overStock && (
+          <span className={errText}>현재고({selected.stock.toLocaleString()})보다 많습니다.</span>
+        )}
+        {err.quantity && <span className={errText}>{err.quantity}</span>}
+      </label>
+      {/* 직원은 단가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
+      {showPrice && (
+        <label className="text-sm">
+          출고단가 (원, 기본 판매가)
+          <Input
+            name="unitPrice"
+            type="number"
+            min={0}
+            step={1}
+            className={`${input} text-right tabular-nums`}
+            placeholder="0"
+            value={unitPriceText}
+            onChange={(e) => setUnitPriceText(e.target.value)} />
+          {err.unitPrice && <span className={errText}>{err.unitPrice}</span>}
+        </label>
+      )}
+      <label className={`text-sm ${showPrice ? "" : "col-span-2"}`}>
+        출고처 (선택)
+        <Input
+          name="customer"
+          maxLength={100}
+          className={input}
+          placeholder="예: 한빛마트"
+          list="outbound-customers" />
+        <datalist id="outbound-customers">
+          {customers.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        {err.customer && <span className={errText}>{err.customer}</span>}
+      </label>
+      <label className="text-sm">
+        출고일시 (비우면 현재 시각)
+        <Input name="shippedAt" type="datetime-local" className={input} />
+        {err.shippedAt && <span className={errText}>{err.shippedAt}</span>}
+      </label>
+
+      <label className="col-span-4 text-sm">
         출고 위치
         <PickSelect key={productId} productId={productId} quantity={qty} baseUnit={selected?.baseUnit} />
         {err.pick && <span className={errText}>{err.pick}</span>}
       </label>
 
-      <div className="flex gap-4">
-        <label className="flex-1 text-sm">
-          출고처 (선택)
-          <Input
-            name="customer"
-            maxLength={100}
-            className={input}
-            placeholder="예: 한빛마트"
-            list="outbound-customers" />
-          <datalist id="outbound-customers">
-            {customers.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-          {err.customer && <span className={errText}>{err.customer}</span>}
-        </label>
-        <label className="flex-1 text-sm">
-          출고일시 (비우면 현재 시각)
-          <Input name="shippedAt" type="datetime-local" className={input} />
-          {err.shippedAt && <span className={errText}>{err.shippedAt}</span>}
-        </label>
-      </div>
-
-      <label className="text-sm">
+      <label className="col-span-3 text-sm">
         비고 (선택)
         <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className={errText}>{err.memo}</span>}
       </label>
-
-      <Button type="submit"
-        disabled={pending}>
-        {pending ? "처리 중..." : "출고 등록"}
-      </Button>
+      <div className="flex items-end">
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "처리 중..." : "출고 등록"}
+        </Button>
+      </div>
 
       {state.status === "confirm" ? (
         <div
           aria-live="polite"
-          className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="col-span-4 flex items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
           <p>{state.message}</p>
           <button
             name="confirmDuplicate"
             value="1"
             disabled={pending}
-            className="mt-2 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
+            className="shrink-0 rounded-[6px] bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-500 disabled:bg-gray-400"
           >
             그래도 등록
           </button>
@@ -228,7 +232,7 @@ export default function OutboundForm({
         state.message && (
           <p
             aria-live="polite"
-            className={`text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
+            className={`col-span-4 text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
           >
             {state.message}
           </p>

@@ -86,7 +86,7 @@ export default function Header({
           <CalendarClockIcon className="size-5" strokeWidth={1.8} />
           {expiryAlert.total > 0 && (
             <span
-              className={`absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-md px-1 text-[10px] font-semibold text-white tabular-nums ${expiryAlert.expired > 0 ? "bg-destructive" : "bg-[#d89b18]"}`}
+              className={`absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-md px-1 text-[10px] font-semibold text-white tabular-nums ${expiryAlert.expired > 0 ? "bg-destructive" : "bg-warning"}`}
             >
               {expiryAlert.total > 99 ? "99+" : expiryAlert.total}
             </span>
@@ -119,7 +119,7 @@ export default function Header({
           <Badge variant={user.role === "ADMIN" ? "indigo" : "gray"}>{USER_ROLE_LABELS[user.role]}</Badge>
           <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
-        <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-popover p-1 shadow-[0_4px_12px_rgba(15,23,42,0.08)]">
+        <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-popover p-1 shadow-elevated">
           <button
             type="button"
             onClick={(e) => {

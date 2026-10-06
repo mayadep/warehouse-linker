@@ -7,7 +7,7 @@ export default async function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xs">
+      <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-card">
         <h1 className="mb-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <span className="size-2.5 rounded-full bg-primary" />
           재고관리

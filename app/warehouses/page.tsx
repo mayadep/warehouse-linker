@@ -50,7 +50,7 @@ export default async function WarehousesPage() {
             <Link
               key={w.id}
               href={`/warehouses/${w.id}`}
-              className={`rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 ${w.isActive ? "" : "opacity-60"}`}
+              className={`rounded-xl border bg-card p-4 shadow-card transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 ${w.isActive ? "" : "opacity-60"}`}
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm text-muted-foreground">{w.code}</span>
