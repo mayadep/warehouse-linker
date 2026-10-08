@@ -1,6 +1,7 @@
+import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Prisma, StockMovementType } from "@prisma/client";
-import { dateOnlyToDb, dbToDateOnly } from "@/lib/datetime";
+import { dateOnlyToDb, dbToDateOnly, toKstDate } from "@/lib/datetime";
 
 /** 재고 부족 (차감 후 음수가 되는 경우) */
 export class InsufficientStockError extends Error {
@@ -34,19 +35,27 @@ export type StockBucket = { locationId: string | null; expiryDate: string | null
 
 const bucketKey = (b: StockBucket) => `${b.locationId ?? ""}|${b.expiryDate ?? ""}`;
 
+/** 칸 + 입고일(선입선출 기준, "YYYY-MM-DD", null = 미상) */
+type Lot = StockBucket & { lotDate: string | null };
+
+const lotKey = (b: Lot) => `${bucketKey(b)}|${b.lotDate ?? ""}`;
+
 /**
- * 자동 차감 순서: 유통기한 미상 먼저 → 유통기한 빠른 순 → 상품 기본 보관위치 먼저 → (나머지는 고정 순서)
- * 유통기한을 모르는 재고(이관된 기존 재고 등)를 먼저 소진한다
+ * 자동 차감 순서(선입선출): 입고일 미상 먼저 → 입고일 오래된 순 → 유통기한 미상 먼저 → 유통기한 빠른 순
+ * → 상품 기본 보관위치 먼저 → (나머지는 고정 순서)
+ * 입고일을 모르는 재고(이관된 기존 재고 등)는 가장 오래된 것으로 보고 먼저 소진한다
  */
-function fefoCompare(defaultLocationId: string | null) {
-  return (a: StockBucket, b: StockBucket) => {
+function fifoCompare(defaultLocationId: string | null) {
+  return (a: Lot, b: Lot) => {
+    if ((a.lotDate === null) !== (b.lotDate === null)) return a.lotDate === null ? -1 : 1;
+    if (a.lotDate !== b.lotDate) return a.lotDate! < b.lotDate! ? -1 : 1;
     if ((a.expiryDate === null) !== (b.expiryDate === null)) return a.expiryDate === null ? -1 : 1;
     if (a.expiryDate !== b.expiryDate) return a.expiryDate! < b.expiryDate! ? -1 : 1;
     const ad = a.locationId === defaultLocationId ? 0 : 1;
     const bd = b.locationId === defaultLocationId ? 0 : 1;
     if (ad !== bd) return ad - bd;
-    const ak = bucketKey(a);
-    const bk = bucketKey(b);
+    const ak = lotKey(a);
+    const bk = lotKey(b);
     return ak < bk ? -1 : ak > bk ? 1 : 0;
   };
 }
@@ -54,7 +63,7 @@ function fefoCompare(defaultLocationId: string | null) {
 /** 이 입고/출고로 칸마다 순수하게 들어간(+)/나간(-) 수량. 먼저 생긴 칸 순 */
 async function netByBucket(tx: Prisma.TransactionClient, where: { inboundId: string } | { outboundId: string }) {
   const rows = await tx.stockMovement.groupBy({
-    by: ["locationId", "expiryDate"],
+    by: ["locationId", "expiryDate", "lotDate"],
     where,
     _sum: { quantity: true },
     _min: { createdAt: true },
@@ -63,18 +72,20 @@ async function netByBucket(tx: Prisma.TransactionClient, where: { inboundId: str
     .map((r) => ({
       locationId: r.locationId,
       expiryDate: r.expiryDate ? dbToDateOnly(r.expiryDate) : null,
+      lotDate: r.lotDate ? dbToDateOnly(r.lotDate) : null,
       net: r._sum.quantity ?? 0,
       first: r._min.createdAt?.getTime() ?? 0,
     }))
     .sort((a, b) => a.first - b.first);
 }
 
-type Plan = { bucket: StockBucket; quantity: number; balanceId?: string; balanceQty?: number }[];
+type Plan = { bucket: StockBucket; lotDate: string | null; quantity: number; balanceId?: string; balanceQty?: number }[];
 
 /**
  * 늘릴 칸 정하기
- * - 출고 취소·출고 수량 감소: 그 출고가 뺐던 칸으로 되돌림 (나중에 뺀 칸부터)
+ * - 출고 취소·출고 수량 감소: 그 출고가 뺐던 칸(입고일 포함)으로 되돌림 (나중에 뺀 칸부터)
  * - 그 외: 지정한 칸 → 입고 정정이면 그 입고의 칸 → 상품 기본 보관위치(유통기한 미상)
+ * - 입고일: 이미 넣은 칸이 있으면 그 칸의 입고일, 처음 넣는 입고분이면 입고일시(KST 날짜). 입고와 무관하면 미상
  */
 async function planIncrease(
   tx: Prisma.TransactionClient,
@@ -85,29 +96,35 @@ async function planIncrease(
   if (args.outboundId) {
     const taken = (await netByBucket(tx, { outboundId: args.outboundId }))
       .filter((b) => b.net < 0)
-      .sort(fefoCompare(product.locationId))
+      .sort(fifoCompare(product.locationId))
       .reverse();
     const plan: Plan = [];
     let left = args.delta;
     for (const b of taken) {
       if (left === 0) break;
       const q = Math.min(left, -b.net);
-      plan.push({ bucket: { locationId: b.locationId, expiryDate: b.expiryDate }, quantity: q });
+      plan.push({ bucket: { locationId: b.locationId, expiryDate: b.expiryDate }, lotDate: b.lotDate, quantity: q });
       left -= q;
     }
-    if (left > 0) plan.push({ bucket: fallback, quantity: left });
+    if (left > 0) plan.push({ bucket: fallback, lotDate: null, quantity: left });
     return plan;
   }
-  if (!args.bucket && args.inboundId) {
-    const placed = (await netByBucket(tx, { inboundId: args.inboundId })).find((b) => b.net > 0);
-    if (placed) return [{ bucket: { locationId: placed.locationId, expiryDate: placed.expiryDate }, quantity: args.delta }];
+  if (args.inboundId) {
+    const placed = (await netByBucket(tx, { inboundId: args.inboundId })).filter((b) => b.net > 0);
+    const same = args.bucket ? placed.find((b) => bucketKey(b) === bucketKey(args.bucket!)) : placed[0];
+    if (same) {
+      const bucket = args.bucket ?? { locationId: same.locationId, expiryDate: same.expiryDate };
+      return [{ bucket, lotDate: same.lotDate, quantity: args.delta }];
+    }
+    const inbound = await tx.inbound.findUnique({ where: { id: args.inboundId }, select: { receivedAt: true } });
+    return [{ bucket: fallback, lotDate: inbound ? toKstDate(inbound.receivedAt) : null, quantity: args.delta }];
   }
-  return [{ bucket: fallback, quantity: args.delta }];
+  return [{ bucket: fallback, lotDate: null, quantity: args.delta }];
 }
 
 /**
  * 뺄 칸 정하기: 지정한 칸 → (입고 취소·입고 수량 감소면) 그 입고가 넣었던 칸 → 같은 유통기한 칸(위치 이동된 재고)
- * → 자동 순서(fefoCompare)
+ * → 자동 순서(fifoCompare)
  * 총재고는 이미 충분함이 확인된 상태(칸별 합계 == 총재고)이므로 모자라면 데이터 불일치
  */
 async function planDecrease(
@@ -119,42 +136,50 @@ async function planDecrease(
   const balances = (
     await tx.stockBalance.findMany({
       where: { productId },
-      select: { id: true, locationId: true, expiryDate: true, quantity: true },
+      select: { id: true, locationId: true, expiryDate: true, lotDate: true, quantity: true },
     })
-  ).map((b) => ({ ...b, expiryDate: b.expiryDate ? dbToDateOnly(b.expiryDate) : null }));
+  ).map((b) => ({
+    ...b,
+    expiryDate: b.expiryDate ? dbToDateOnly(b.expiryDate) : null,
+    lotDate: b.lotDate ? dbToDateOnly(b.lotDate) : null,
+  }));
 
-  const preferred: StockBucket[] = args.bucket
-    ? [args.bucket]
+  const preferred: Lot[] = args.bucket
+    ? [{ ...args.bucket, lotDate: null }]
     : args.inboundId
       ? (await netByBucket(tx, { inboundId: args.inboundId })).filter((b) => b.net > 0)
       : [];
-  // 칸 지정 출고(strict): 그 칸에서만, 모자라면 거부
+  // 칸 지정 출고(strict): 그 칸(위치·유통기한)에서만, 모자라면 거부. 칸 안에 입고일이 다른 재고가 있으면 오래된 입고분부터
+  let pool = balances;
   if (args.strict && args.bucket) {
     const want = bucketKey(args.bucket);
-    const b = balances.find((x) => bucketKey(x) === want);
+    pool = balances.filter((x) => bucketKey(x) === want);
+    const have = pool.reduce((a, x) => a + x.quantity, 0);
     const need = -args.delta;
-    if (!b || b.quantity < need) {
+    if (have < need) {
       const loc = args.bucket.locationId
         ? await tx.location.findUnique({ where: { id: args.bucket.locationId }, select: { code: true } })
         : null;
-      throw new BucketStockError(loc?.code ?? "미지정", args.bucket.expiryDate, b?.quantity ?? 0, need);
+      throw new BucketStockError(loc?.code ?? "미지정", args.bucket.expiryDate, have, need);
     }
-    return [{ bucket: args.bucket, quantity: args.delta, balanceId: b.id, balanceQty: b.quantity }];
   }
 
+  // 입고 취소 때는 그 입고가 넣었던 칸(입고일까지 같은 칸) → 같은 위치·유통기한 칸 → 같은 유통기한 칸(위치 이동된 재고) 순
+  const prefFull = args.inboundId ? preferred.map(lotKey) : [];
   const prefKeys = preferred.map(bucketKey);
-  // 입고 취소 때 원래 칸에서 다른 칸으로 옮겨졌으면, 유통기한이 같은 칸이 그 재고일 가능성이 높음
   const prefExpiries = args.inboundId ? new Set(preferred.map((b) => b.expiryDate)) : new Set<string | null>();
-  const rank = (b: StockBucket) => {
+  const rank = (b: Lot) => {
+    const f = prefFull.indexOf(lotKey(b));
+    if (f !== -1) return f;
     const i = prefKeys.indexOf(bucketKey(b));
-    if (i !== -1) return i;
-    return prefExpiries.has(b.expiryDate) ? prefKeys.length : Infinity;
+    if (i !== -1) return prefFull.length + i;
+    return prefExpiries.has(b.expiryDate) ? prefFull.length + prefKeys.length : Infinity;
   };
-  const ordered = [...balances].sort((a, b) => {
+  const ordered = [...pool].sort((a, b) => {
     const ar = rank(a);
     const br = rank(b);
     if (ar !== br) return ar - br;
-    return fefoCompare(product.locationId)(a, b);
+    return fifoCompare(product.locationId)(a, b);
   });
 
   const plan: Plan = [];
@@ -164,6 +189,7 @@ async function planDecrease(
     const q = Math.min(left, b.quantity);
     plan.push({
       bucket: { locationId: b.locationId, expiryDate: b.expiryDate },
+      lotDate: b.lotDate,
       quantity: -q,
       balanceId: b.id,
       balanceQty: b.quantity,
@@ -179,9 +205,9 @@ async function applyBalance(tx: Prisma.TransactionClient, productId: string, ste
   const { bucket, quantity } = step;
   if (quantity > 0) {
     await tx.$executeRaw`
-      INSERT INTO "StockBalance" ("id", "productId", "locationId", "expiryDate", "quantity", "updatedAt")
-      VALUES (${randomUUID()}, ${productId}, ${bucket.locationId}, ${bucket.expiryDate}::date, ${quantity}, now() AT TIME ZONE 'UTC')
-      ON CONFLICT ("productId", "locationId", "expiryDate")
+      INSERT INTO "StockBalance" ("id", "productId", "locationId", "expiryDate", "lotDate", "quantity", "updatedAt")
+      VALUES (${randomUUID()}, ${productId}, ${bucket.locationId}, ${bucket.expiryDate}::date, ${step.lotDate}::date, ${quantity}, now() AT TIME ZONE 'UTC')
+      ON CONFLICT ("productId", "locationId", "expiryDate", "lotDate")
       DO UPDATE SET "quantity" = "StockBalance"."quantity" + EXCLUDED."quantity", "updatedAt" = EXCLUDED."updatedAt"`;
     return;
   }
@@ -267,6 +293,7 @@ export async function changeStock(
           outboundId: args.outboundId,
           locationId: step.bucket.locationId,
           expiryDate: step.bucket.expiryDate ? dateOnlyToDb(step.bucket.expiryDate) : null,
+          lotDate: step.lotDate ? dateOnlyToDb(step.lotDate) : null,
         },
       })
     );
@@ -324,25 +351,36 @@ async function transferBucket(
   const p = await tx.product.findUnique({ where: { id: productId }, select: { stock: true, name: true } });
   if (!p) throw new StockBucketError("존재하지 않는 상품입니다.");
 
-  const bal = await tx.stockBalance.findFirst({
-    where: {
-      productId,
-      locationId: from.locationId,
-      expiryDate: from.expiryDate ? dateOnlyToDb(from.expiryDate) : null,
-    },
-    select: { id: true, quantity: true },
-  });
-  if (!bal) throw new StockBucketError("해당 칸의 재고가 없습니다. 새로고침 후 다시 시도하세요.");
-  if (bal.quantity < quantity) {
+  // 같은 칸(위치·유통기한)의 입고일별 재고를 오래된 입고분부터 옮긴다 (입고일은 그대로 따라감)
+  const lots = (
+    await tx.stockBalance.findMany({
+      where: {
+        productId,
+        locationId: from.locationId,
+        expiryDate: from.expiryDate ? dateOnlyToDb(from.expiryDate) : null,
+      },
+      select: { id: true, lotDate: true, quantity: true },
+    })
+  )
+    .map((b) => ({ ...b, lotDate: b.lotDate ? dbToDateOnly(b.lotDate) : null }))
+    .sort((a, b) => fifoCompare(null)({ ...from, lotDate: a.lotDate }, { ...from, lotDate: b.lotDate }));
+  if (lots.length === 0) throw new StockBucketError("해당 칸의 재고가 없습니다. 새로고침 후 다시 시도하세요.");
+  const have = lots.reduce((a, b) => a + b.quantity, 0);
+  if (have < quantity) {
     throw new StockBucketError(
-      `칸의 재고보다 많이 ${args.type === "MOVE" ? "옮길" : "바꿀"} 수 없습니다. (칸 재고 ${bal.quantity.toLocaleString()}, 요청 ${quantity.toLocaleString()})`
+      `칸의 재고보다 많이 ${args.type === "MOVE" ? "옮길" : "바꿀"} 수 없습니다. (칸 재고 ${have.toLocaleString()}, 요청 ${quantity.toLocaleString()})`
     );
   }
 
-  const steps: Plan = [
-    { bucket: from, quantity: -quantity, balanceId: bal.id, balanceQty: bal.quantity },
-    { bucket: to, quantity },
-  ];
+  const steps: Plan = [];
+  let left = quantity;
+  for (const l of lots) {
+    if (left === 0) break;
+    const q = Math.min(left, l.quantity);
+    steps.push({ bucket: from, lotDate: l.lotDate, quantity: -q, balanceId: l.id, balanceQty: l.quantity });
+    steps.push({ bucket: to, lotDate: l.lotDate, quantity: q });
+    left -= q;
+  }
   for (const step of steps) {
     await applyBalance(tx, productId, step);
     await tx.stockMovement.create({
@@ -354,6 +392,7 @@ async function transferBucket(
         afterStock: p.stock,
         locationId: step.bucket.locationId,
         expiryDate: step.bucket.expiryDate ? dateOnlyToDb(step.bucket.expiryDate) : null,
+        lotDate: step.lotDate ? dateOnlyToDb(step.lotDate) : null,
       },
     });
   }

@@ -1,3 +1,4 @@
+import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dateOnlyToDb, dbToDateOnly, toKstDateTimeLocal } from "@/lib/datetime";
@@ -14,6 +15,8 @@ import type { CurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import { adjustOrderLineProcessed, OrderLineLimitError } from "@/modules/order/lines";
 import { auditRevision, recordAudit } from "@/modules/audit/service";
+import { resolvePartner } from "@/modules/partner/service";
+import { activeProductSearchWhere, PRODUCT_SEARCH_LIMIT } from "@/modules/product/service";
 
 export class OutboundError extends Error {}
 export class OutboundConflictError extends OutboundError {}
@@ -28,12 +31,12 @@ export async function findSimilarOutbound(input: OutboundCreateInput, now = new 
   return prisma.outbound.findFirst({
     where: {
       productId: input.productId,
-      customer: input.customer,
+      partnerId: input.partnerId,
       quantity: input.quantity,
       createdAt: { gte: new Date(now.getTime() - SIMILAR_WINDOW_MS) },
     },
     orderBy: { createdAt: "desc" },
-    select: { createdAt: true, quantity: true, customer: true, product: { select: { name: true } } },
+    select: { createdAt: true, quantity: true, partner: { select: { name: true } }, product: { select: { name: true } } },
   });
 }
 
@@ -55,17 +58,19 @@ const pickOf = (o: { pickFixed: boolean; pickLocationId: string | null; pickExpi
 
 /** 대기 출고 등록 시: 지정한 칸에 지금 수량이 있는지 (예약은 하지 않음, 확정 때 다시 확인) */
 async function assertPickAvailable(tx: Prisma.TransactionClient, productId: string, pick: StockBucket, quantity: number) {
-  const b = await tx.stockBalance.findFirst({
+  // 같은 칸(위치·유통기한)의 입고일별 재고를 모두 합산
+  const sum = await tx.stockBalance.aggregate({
     where: {
       productId,
       locationId: pick.locationId,
       expiryDate: pick.expiryDate ? dateOnlyToDb(pick.expiryDate) : null,
     },
-    select: { quantity: true, location: { select: { code: true } } },
+    _sum: { quantity: true },
   });
-  if (!b || b.quantity < quantity) {
-    const code = b?.location?.code ?? (pick.locationId ? (await tx.location.findUnique({ where: { id: pick.locationId }, select: { code: true } }))?.code : null);
-    throw new OutboundError(new BucketStockError(code ?? "미지정", pick.expiryDate, b?.quantity ?? 0, quantity).message);
+  const have = sum._sum.quantity ?? 0;
+  if (have < quantity) {
+    const code = pick.locationId ? (await tx.location.findUnique({ where: { id: pick.locationId }, select: { code: true } }))?.code : null;
+    throw new OutboundError(new BucketStockError(code ?? "미지정", pick.expiryDate, have, quantity).message);
   }
 }
 
@@ -99,13 +104,15 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
       }
       if (!confirmed && input.pick) await assertPickAvailable(tx, input.productId, input.pick, input.quantity);
 
+      const partner = input.partnerId ? await resolvePartner(tx, input.partnerId, "CUSTOMER", { error: (m) => new OutboundError(m) }) : null;
+
       const unitPrice = confirmed ? input.unitPrice : null;
       const outbound = await tx.outbound.create({
         data: {
           productId: input.productId,
           quantity: input.quantity,
           unitPrice,
-          customer: input.customer,
+          partnerId: partner?.id ?? null,
           memo: input.memo,
           shippedAt: input.shippedAt,
           ...pickData(input.pick),
@@ -141,11 +148,11 @@ export async function createOutbound(input: OutboundCreateInput, actor: CurrentU
         action: "OUTBOUND_CREATE",
         targetId: outbound.id,
         targetLabel: product.name,
-        summary: `${product.name} ${input.quantity.toLocaleString()}개 출고${confirmed ? "" : " 등록(확정 대기)"}${input.customer ? ` (${input.customer})` : ""}`,
+        summary: `${product.name} ${input.quantity.toLocaleString()}개 출고${confirmed ? "" : " 등록(확정 대기)"}${partner ? ` (${partner.name})` : ""}`,
         detail: {
           quantity: input.quantity,
           ...(confirmed ? { unitPrice } : {}),
-          customer: input.customer,
+          customer: partner?.name ?? null,
           memo: input.memo,
           shippedAt: toKstDateTimeLocal(input.shippedAt).replace("T", " "),
           status: confirmed ? "확정" : "확정 대기",
@@ -167,7 +174,11 @@ export async function confirmOutbound(input: OutboundConfirmInput, actor: Curren
   return prisma.$transaction(async (tx) => {
     const cur = await tx.outbound.findUnique({
       where: { id: input.outboundId },
-      include: { product: { select: { name: true } }, createdBy: { select: { name: true, loginId: true } } },
+      include: {
+        product: { select: { name: true } },
+        partner: { select: { name: true } },
+        createdBy: { select: { name: true, loginId: true } },
+      },
     });
     if (!cur) throw new OutboundError("존재하지 않는 출고 건입니다.");
     if (cur.status !== "PENDING") throw new OutboundError("확정 대기 중인 출고만 확정할 수 있습니다.");
@@ -212,7 +223,7 @@ export async function confirmOutbound(input: OutboundConfirmInput, actor: Curren
       detail: {
         quantity: cur.quantity,
         unitPrice: input.unitPrice,
-        customer: cur.customer,
+        customer: cur.partner?.name ?? null,
         shippedAt: toKstDateTimeLocal(cur.shippedAt).replace("T", " "),
         afterStock,
         ...(cur.createdBy ? { createdBy: `${cur.createdBy.name}(${cur.createdBy.loginId})` } : {}),
@@ -233,6 +244,7 @@ export async function cancelOutbound(input: OutboundVoidInput, actor: CurrentUse
       where: { id: input.outboundId },
       include: {
         product: { select: { name: true } },
+        partner: { select: { name: true } },
         dispatchItem: { select: { dispatch: { select: { dispatchNo: true } } } },
       },
     });
@@ -274,7 +286,7 @@ export async function cancelOutbound(input: OutboundVoidInput, actor: CurrentUse
       summary: `${cur.product.name} ${cur.quantity.toLocaleString()}개 출고 취소 (재고 +${cur.quantity.toLocaleString()}) — ${input.reason}`,
       detail: {
         quantity: cur.quantity,
-        customer: cur.customer,
+        customer: cur.partner?.name ?? null,
         shippedAt: toKstDateTimeLocal(cur.shippedAt).replace("T", " "),
         afterStock: r.afterStock,
         reason: input.reason,
@@ -289,7 +301,11 @@ export async function deletePendingOutbound(input: OutboundVoidInput) {
   return prisma.$transaction(async (tx) => {
     const cur = await tx.outbound.findUnique({
       where: { id: input.outboundId },
-      include: { product: { select: { name: true } }, createdBy: { select: { name: true, loginId: true } } },
+      include: {
+        product: { select: { name: true } },
+        partner: { select: { name: true } },
+        createdBy: { select: { name: true, loginId: true } },
+      },
     });
     if (!cur) throw new OutboundError("존재하지 않는 출고 건입니다.");
     if (cur.status !== "PENDING") throw new OutboundError("확정 대기 중인 출고만 삭제할 수 있습니다. (확정 건은 취소)");
@@ -308,7 +324,7 @@ export async function deletePendingOutbound(input: OutboundVoidInput) {
       summary: `${cur.product.name} ${cur.quantity.toLocaleString()}개 대기 출고 삭제 — ${input.reason}`,
       detail: {
         quantity: cur.quantity,
-        customer: cur.customer,
+        customer: cur.partner?.name ?? null,
         memo: cur.memo,
         shippedAt: toKstDateTimeLocal(cur.shippedAt).replace("T", " "),
         reason: input.reason,
@@ -335,7 +351,7 @@ export async function updateOutbound(input: OutboundUpdateInput) {
   return prisma.$transaction(async (tx) => {
     const cur = await tx.outbound.findUnique({
       where: { id: input.outboundId },
-      include: { product: { select: { name: true } } },
+      include: { product: { select: { name: true } }, partner: { select: { name: true } } },
     });
     if (!cur) throw new OutboundError("존재하지 않는 출고 건입니다.");
     if (cur.status === "CANCELLED") throw new OutboundError("취소된 출고는 수정할 수 없습니다.");
@@ -359,9 +375,12 @@ export async function updateOutbound(input: OutboundUpdateInput) {
       before.unitPrice = cur.unitPrice;
       after.unitPrice = input.unitPrice;
     }
-    if (cur.customer !== input.customer) {
-      before.customer = cur.customer;
-      after.customer = input.customer;
+    const partner = input.partnerId
+      ? await resolvePartner(tx, input.partnerId, "CUSTOMER", { keepId: cur.partnerId, error: (m) => new OutboundError(m) })
+      : null;
+    if (cur.partnerId !== (partner?.id ?? null)) {
+      before.customer = cur.partner?.name ?? null;
+      after.customer = partner?.name ?? null;
     }
     if (cur.memo !== input.memo) {
       before.memo = cur.memo;
@@ -378,7 +397,7 @@ export async function updateOutbound(input: OutboundUpdateInput) {
       data: {
         quantity: input.quantity,
         unitPrice: input.unitPrice,
-        customer: input.customer,
+        partnerId: partner?.id ?? null,
         memo: input.memo,
         shippedAt,
         version: { increment: 1 },
@@ -455,37 +474,34 @@ export async function updateOutbound(input: OutboundUpdateInput) {
   });
 }
 
-export async function listProductsForOutbound() {
-  return prisma.product.findMany({
-    where: { status: "ACTIVE" }, // 확정 상품만
-    select: {
-      id: true,
-      sku: true,
-      name: true,
-      category: true,
-      stock: true,
-      price: true,
-      baseUnit: true,
-      location: { select: { code: true } },
-    },
-    orderBy: [{ category: "asc" }, { sku: "asc" }],
-  });
-}
-
-/** 출고처 자동완성용 (최근 사용 순) */
-export async function listRecentCustomers(limit = 30) {
-  const rows = await prisma.outbound.groupBy({
-    by: ["customer"],
-    where: { customer: { not: null } },
-    _max: { createdAt: true },
-    orderBy: { _max: { createdAt: "desc" } },
-    take: limit,
-  });
-  return rows.map((r) => r.customer).filter((c): c is string => !!c);
+/** 출고 가능한 상품 검색 (확정 상품만, 최대 PRODUCT_SEARCH_LIMIT 개 + 조건에 맞는 전체 개수) */
+export async function searchProductsForOutbound(keyword?: string) {
+  const where = activeProductSearchWhere(keyword);
+  const [rows, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        category: true,
+        stock: true,
+        price: true,
+        baseUnit: true,
+        boxQty: true,
+        location: { select: { code: true } },
+      },
+      orderBy: [{ category: "asc" }, { sku: "asc" }],
+      take: PRODUCT_SEARCH_LIMIT,
+    }),
+    prisma.product.count({ where }),
+  ]);
+  return { rows, total };
 }
 
 const recentOutboundInclude = {
   product: { select: { sku: true, name: true, baseUnit: true, stock: true, price: true } },
+  partner: { select: { id: true, name: true } },
   createdBy: { select: { name: true } },
   dispatchItem: { select: { dispatch: { select: { dispatchNo: true } } } },
   pickLocation: { select: { code: true } },

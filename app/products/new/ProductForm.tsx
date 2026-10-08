@@ -10,6 +10,7 @@ import {
   PRODUCT_UNIT_LABELS,
   type ProductUnitCode,
 } from "@/modules/product/units";
+import { STORAGE_TEMPS, STORAGE_TEMP_LABELS } from "@/modules/product/storage";
 import { DEFAULT_SAFETY_STOCK } from "@/modules/product/defaults";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,14 +52,15 @@ export default function ProductForm({ categories, showPrice }: { categories: str
       noValidate
     >
       <label className="text-sm">
-        품목코드
-        <Input
-          name="sku"
-          className={`${input} uppercase`}
-          required
-          maxLength={30}
-          placeholder="SAU-009" />
-        {err.sku && <span className={errText}>{err.sku}</span>}
+        보관 온도
+        <NativeSelect name="storageTemp" className={input} defaultValue="AMBIENT">
+          {STORAGE_TEMPS.map((t) => (
+            <option key={t} value={t}>
+              {STORAGE_TEMP_LABELS[t]}
+            </option>
+          ))}
+        </NativeSelect>
+        {err.storageTemp && <span className={errText}>{err.storageTemp}</span>}
       </label>
       <label className="text-sm">
         분류

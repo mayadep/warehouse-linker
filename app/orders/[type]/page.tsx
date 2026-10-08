@@ -15,7 +15,8 @@ import {
   type OrderStatusCode,
   type OrderTypeCode,
 } from "@/modules/order/codes";
-import { listOrders, listProductsForOrder, listRecentPartners, ORDER_PAGE_SIZE } from "@/modules/order/service";
+import { listOrders, listProductsForOrder, ORDER_PAGE_SIZE } from "@/modules/order/service";
+import { listPartnerOptions } from "@/modules/partner/service";
 import OrderCreateButton from "../OrderCreateButton";
 import { ChevronLeftIcon, ChevronRightIcon, ClipboardListIcon, RotateCcwIcon, SearchIcon } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
@@ -43,7 +44,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
   const [{ total, rows }, products, partners] = await Promise.all([
     listOrders({ type, status, q, page }),
     listProductsForOrder(),
-    listRecentPartners(type),
+    listPartnerOptions(type === "SALES" ? "CUSTOMER" : "SUPPLIER"),
   ]);
   const pages = Math.max(1, Math.ceil(total / ORDER_PAGE_SIZE));
   const typeParam = type === "SALES" ? "sales" : "purchase";
@@ -126,7 +127,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
                   </Link>
                 </td>
                 <td className="text-muted-foreground">{toKstDate(o.createdAt)}</td>
-                <td className="left">{o.partner}</td>
+                <td className="left">{o.partner.name}</td>
                 <td className="left max-w-56 truncate" title={o.lines.map((l) => l.product.name).join(", ")}>
                   {o.lines[0]?.product.name}
                   {o.lines.length > 1 && <span className="text-muted-foreground"> 외 {o.lines.length - 1}</span>}

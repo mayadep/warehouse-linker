@@ -1,3 +1,4 @@
+import "server-only";
 import { prisma } from "@/lib/prisma";
 import { isUniqueViolation } from "@/modules/stock/service";
 import { createRacksWithLocations } from "./builder";

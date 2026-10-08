@@ -1,3 +1,4 @@
+import "server-only";
 // 감사 로그 조회 (읽기 전용)
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";

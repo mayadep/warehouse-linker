@@ -17,7 +17,7 @@ export default async function UsersPage() {
       <div className="mb-6">
         <h2 className="text-2xl font-semibold tracking-tight">사용자·권한</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          직원: 상품 등록·입고 등록(관리자 확정 전까지 대기), 상품·입고·재고현황 조회(금액 제외) · 관리자: 확정·취소·삭제·금액 보기·모든 메뉴
+          직원: 상품·입고·출고 등록(관리자 확정 전까지 대기), 입고·출고·재고현황 조회(금액 제외) · 입출고 담당: 입고·출고 등록·확정·수정·취소(금액 포함), 재고현황 조회 · 조회 전용: 입고·출고·재고현황 조회만(금액 제외) · 관리자: 확정·취소·삭제·금액 보기·모든 메뉴
         </p>
       </div>
       <UserManager

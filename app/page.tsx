@@ -1,9 +1,22 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { AlertTriangleIcon, BoxesIcon, CalendarClockIcon, CheckCircle2Icon, ClipboardListIcon, PackageIcon, TruckIcon } from "lucide-react";
+import { AlertTriangleIcon, BoxesIcon, CalendarClockIcon, CheckCircle2Icon, ClipboardListIcon, MegaphoneIcon, PackageIcon, PinIcon, TruckIcon } from "lucide-react";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import { getPendingCounts, getRecentActivity, getShortProducts, getTodayOverview, type ActivityRow } from "@/modules/dashboard/queries";
+import {
+  getInOutTrend,
+  getOrderStatusCounts,
+  getPendingCounts,
+  getRecentActivity,
+  getShortProducts,
+  getTodayOverview,
+  getWarehouseStock,
+  type ActivityRow,
+} from "@/modules/dashboard/queries";
+import { listPublishedNotices } from "@/modules/notice/service";
+import { ORDER_TYPE_LABELS } from "@/modules/order/codes";
+import { toKstDate } from "@/lib/datetime";
+import TrendChart from "@/components/charts/TrendChart";
 import { countExpiryAlerts, EXPIRY_SOON_DAYS } from "@/modules/stock/queries";
 import KpiCard, { type KpiDelta } from "@/components/KpiCard";
 import EmptyState from "@/components/EmptyState";
@@ -60,13 +73,18 @@ export default async function DashboardPage() {
   const canViewStock = can(user.role, "stock.view");
   const isAdmin = can(user.role, "admin");
 
-  const [overview, recent, shortProducts, pending, expiry] = await Promise.all([
+  const [overview, recent, shortProducts, pending, expiry, trend, warehouseStock, orderCounts, notices] = await Promise.all([
     getTodayOverview(),
     getRecentActivity(),
     canViewStock ? getShortProducts() : Promise.resolve([]),
     isAdmin ? getPendingCounts() : Promise.resolve(null),
     canViewStock ? countExpiryAlerts() : Promise.resolve(null),
+    getInOutTrend(7),
+    canViewStock ? getWarehouseStock() : Promise.resolve([]),
+    isAdmin ? getOrderStatusCounts() : Promise.resolve([]),
+    listPublishedNotices(),
   ]);
+  const warehouseMax = Math.max(...warehouseStock.map((w) => w.quantity), 1);
   // 유통기한 알림 (만료 = 빨강, 임박 = 노랑)
   const expiryItems = expiry
     ? [
@@ -111,6 +129,106 @@ export default async function DashboardPage() {
           )}
         </div>
       </section>
+
+      <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="공지사항"
+            action={
+              isAdmin && (
+                <Link href="/notices" className="text-xs text-primary hover:underline">
+                  관리
+                </Link>
+              )
+            }
+          />
+          {notices.length === 0 ? (
+            <EmptyState icon={MegaphoneIcon} title="등록된 공지가 없습니다." description="관리자가 공지를 게시하면 여기에 표시됩니다." />
+          ) : (
+            <ul className="divide-y">
+              {notices.map((n) => (
+                <li key={n.id} className="py-2.5 text-sm">
+                  <details>
+                    <summary className="flex cursor-pointer items-center gap-2">
+                      {n.isPinned && <PinIcon className="size-3.5 shrink-0 text-primary" aria-label="상단 고정" />}
+                      <span className="min-w-0 flex-1 truncate">{n.title}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">{toKstDate(n.createdAt)}</span>
+                    </summary>
+                    <p className="mt-2 whitespace-pre-line rounded-lg bg-surface-subtle p-3 text-[13px] text-text-body">{n.body}</p>
+                    <p className="mt-1 text-right text-xs text-muted-foreground">{n.authorName}</p>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        {isAdmin && (
+          <Card>
+            <CardHeader title="주문 상태 현황" />
+            <ul className="divide-y">
+              {orderCounts.map((o) => {
+                const href = `/orders/${o.type === "SALES" ? "sales" : "purchase"}`;
+                const cells = [
+                  { label: "진행 전", n: o.open, status: "OPEN" },
+                  { label: "일부 처리", n: o.partial, status: "PARTIAL" },
+                  { label: "완료", n: o.done, status: "DONE" },
+                ];
+                return (
+                  <li key={o.type} className="py-3">
+                    <p className="mb-2 text-sm font-medium">{ORDER_TYPE_LABELS[o.type]}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {cells.map((c) => (
+                        <Link
+                          key={c.status}
+                          href={`${href}?status=${c.status}`}
+                          className="rounded-lg border bg-surface-subtle px-3 py-2 transition-colors duration-150 ease-out hover:border-primary-border"
+                        >
+                          <span className="block text-xs text-muted-foreground">{c.label}</span>
+                          <span className="text-xl font-bold tabular-nums">{c.n.toLocaleString()}</span>
+                          <span className="ml-0.5 text-xs text-muted-foreground">건</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
+        <Card>
+          <CardHeader title="입출고 추이 (최근 7일, 확정 건수)" />
+          <TrendChart data={trend} />
+        </Card>
+        {canViewStock && (
+          <Card>
+            <CardHeader
+              title="창고별 재고"
+              action={
+                <Link href="/stock" className="text-xs text-primary hover:underline">
+                  더보기
+                </Link>
+              }
+            />
+            {warehouseStock.length === 0 ? (
+              <EmptyState title="재고가 없습니다." description="입고가 확정되면 창고별 재고가 여기에 표시됩니다." />
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {warehouseStock.map((w) => (
+                  <li key={w.id} className="text-sm">
+                    <div className="mb-1 flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate">{w.name}</span>
+                      <span className="font-semibold tabular-nums">{w.quantity.toLocaleString()}개</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
+                      <div className="h-full rounded-full bg-chart-1" style={{ width: `${Math.max(2, (w.quantity / warehouseMax) * 100)}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {canViewStock && (

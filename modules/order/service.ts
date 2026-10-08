@@ -1,3 +1,4 @@
+import "server-only";
 import type { Prisma, TradeOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { nextDocNumber } from "@/lib/doc-number";
@@ -6,6 +7,7 @@ import { dateOnlyToDb, toKstDate, toKstDateTimeLocal } from "@/lib/datetime";
 import { storageMismatchWarning } from "@/modules/warehouse/assign";
 import { inactiveLocationMessage } from "@/modules/warehouse/active";
 import { recordAudit } from "@/modules/audit/service";
+import { resolvePartner } from "@/modules/partner/service";
 import {
   ORDER_PREFIX,
   ORDER_PROCESS_LABELS,
@@ -45,11 +47,14 @@ export async function createOrder(input: OrderCreateInput) {
         return last?.orderNo ?? null;
       });
 
+      const partner = await resolvePartner(tx, input.partnerId, input.type === "PURCHASE" ? "SUPPLIER" : "CUSTOMER", {
+        error: (m) => new OrderError(m),
+      });
       const created = await tx.tradeOrder.create({
         data: {
           type: input.type,
           orderNo,
-          partner: input.partner,
+          partnerId: partner.id,
           dueDate: input.dueDate,
           memo: input.memo,
           requestId: input.requestId,
@@ -70,10 +75,10 @@ export async function createOrder(input: OrderCreateInput) {
         action: "ORDER_CREATE",
         targetId: created.id,
         targetLabel: orderNo,
-        summary: `${typeLabel} 등록: ${orderNo} ${input.partner} (품목 ${input.lines.length}개)`,
+        summary: `${typeLabel} 등록: ${orderNo} ${partner.name} (품목 ${input.lines.length}개)`,
         detail: {
           orderNo,
-          partner: input.partner,
+          partner: partner.name,
           dueDate: input.dueDate ? toKstDate(input.dueDate) : null,
           lines: input.lines
             .map((l) => `${nameOf.get(l.productId)} ${l.quantity.toLocaleString()}${l.unitPrice !== null ? ` @${l.unitPrice.toLocaleString()}` : ""}`)
@@ -139,7 +144,7 @@ export async function processOrder(input: OrderProcessInput) {
       await lockOrder(tx, input.orderId);
       const order = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: input.orderId },
-        include: { lines: { include: { product: { select: { name: true, locationId: true } } } } },
+        include: { partner: { select: { name: true } }, lines: { include: { product: { select: { name: true, locationId: true } } } } },
       });
       if (order.status !== "OPEN" && order.status !== "PARTIAL") {
         throw new OrderError("완료·종결·취소된 주문은 처리할 수 없습니다.");
@@ -182,7 +187,7 @@ export async function processOrder(input: OrderProcessInput) {
               productId: line.productId,
               quantity: req.quantity,
               unitCost: line.unitPrice,
-              supplier: order.partner,
+              partnerId: order.partnerId,
               memo: input.memo ?? `발주 ${order.orderNo}`,
               receivedAt: input.at,
               requestId: keyOf(line.id),
@@ -204,7 +209,7 @@ export async function processOrder(input: OrderProcessInput) {
               productId: line.productId,
               quantity: req.quantity,
               unitPrice: line.unitPrice,
-              customer: order.partner,
+              partnerId: order.partnerId,
               memo: input.memo ?? `수주 ${order.orderNo}`,
               shippedAt: input.at,
               requestId: keyOf(line.id),
@@ -242,7 +247,7 @@ export async function processOrder(input: OrderProcessInput) {
         targetLabel: order.orderNo,
         summary: `${order.orderNo} ${processLabel} 처리: 품목 ${input.lines.length}개, 수량 ${totalQty.toLocaleString()}`,
         detail: {
-          partner: order.partner,
+          partner: order.partner.name,
           lines: done.join(", "),
           [order.type === "PURCHASE" ? "receivedAt" : "shippedAt"]: toKstDateTimeLocal(input.at).replace("T", " "),
           status: ORDER_STATUS_LABELS[status as OrderStatusCode] ?? status,
@@ -302,7 +307,7 @@ export async function listOrders(f: { type: OrderTypeCode; status: string; q: st
   if (f.q) {
     where.OR = [
       { orderNo: { contains: f.q, mode: "insensitive" } },
-      { partner: { contains: f.q, mode: "insensitive" } },
+      { partner: { name: { contains: f.q, mode: "insensitive" } } },
       { lines: { some: { product: { name: { contains: f.q, mode: "insensitive" } } } } },
     ];
   }
@@ -314,6 +319,7 @@ export async function listOrders(f: { type: OrderTypeCode; status: string; q: st
       skip: (Math.max(1, f.page) - 1) * ORDER_PAGE_SIZE,
       take: ORDER_PAGE_SIZE,
       include: {
+        partner: { select: { name: true } },
         lines: {
           orderBy: { seq: "asc" },
           select: { quantity: true, processedQty: true, unitPrice: true, product: { select: { name: true } } },
@@ -328,6 +334,7 @@ export async function getOrderDetail(id: string) {
   return prisma.tradeOrder.findUnique({
     where: { id },
     include: {
+      partner: { select: { name: true } },
       lines: {
         orderBy: { seq: "asc" },
         include: {
@@ -354,16 +361,4 @@ export async function listProductsForOrder() {
     select: { id: true, sku: true, name: true, category: true, price: true, stock: true, baseUnit: true },
     orderBy: [{ category: "asc" }, { sku: "asc" }],
   });
-}
-
-/** 거래처 자동완성 (최근 사용 순) */
-export async function listRecentPartners(type: OrderTypeCode, limit = 30) {
-  const rows = await prisma.tradeOrder.groupBy({
-    by: ["partner"],
-    where: { type },
-    _max: { createdAt: true },
-    orderBy: { _max: { createdAt: "desc" } },
-    take: limit,
-  });
-  return rows.map((r) => r.partner);
 }

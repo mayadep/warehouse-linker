@@ -29,6 +29,5 @@ export const ORDER_LIMITS = {
   maxLines: 50,
   maxQuantity: 1_000_000,
   maxUnitPrice: 100_000_000,
-  maxPartnerLength: 100,
   maxMemoLength: 500,
 } as const;

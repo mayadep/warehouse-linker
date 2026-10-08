@@ -1,3 +1,4 @@
+import "server-only";
 import type { DispatchStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { nextDocNumber } from "@/lib/doc-number";
@@ -81,7 +82,7 @@ async function checkOutbounds(
     where: { id: { in: outboundIds } },
     select: {
       id: true,
-      customer: true,
+      partner: { select: { name: true } },
       status: true,
       product: { select: { name: true, category: true } },
       dispatchItem: { select: { dispatch: { select: { dispatchNo: true } } } },
@@ -112,10 +113,10 @@ async function checkOutbounds(
 async function outboundSummary(tx: Prisma.TransactionClient, outboundIds: string[]) {
   const obs = await tx.outbound.findMany({
     where: { id: { in: outboundIds } },
-    select: { quantity: true, customer: true, product: { select: { name: true } } },
+    select: { quantity: true, partner: { select: { name: true } }, product: { select: { name: true } } },
   });
   return obs
-    .map((o) => `${o.product.name} ${o.quantity.toLocaleString()}${o.customer ? `(${o.customer})` : ""}`)
+    .map((o) => `${o.product.name} ${o.quantity.toLocaleString()}${o.partner ? `(${o.partner.name})` : ""}`)
     .join(", ");
 }
 
@@ -284,7 +285,7 @@ export async function changeDispatchStatus(input: DispatchRef & { to: DispatchSt
 const outboundView = {
   id: true,
   quantity: true,
-  customer: true,
+  partner: { select: { name: true } },
   shippedAt: true,
   memo: true,
   product: { select: { sku: true, name: true, category: true, baseUnit: true } },

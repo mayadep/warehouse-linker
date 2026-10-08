@@ -1,19 +1,21 @@
 // 수발주 입력값 검증 (서버에서 반드시 실행)
 import { INT_RE, UUID_RE, parseDateTime, parseOptionalText, parseRequestId, parseVersion, text } from "@/lib/form";
 import { isDateOnly, parseKstDate } from "@/lib/datetime";
+import { parsePartnerId } from "@/modules/partner/validation";
 import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { ORDER_LIMITS as L, type OrderTypeCode } from "./codes";
 
 export type OrderLineInput = { productId: string; quantity: number; unitPrice: number | null };
 export type OrderCreateInput = {
   type: OrderTypeCode;
-  partner: string;
+  /** 공급처(발주) 또는 출고처(수주) — 존재·사용 여부는 서비스에서 확인 */
+  partnerId: string;
   dueDate: Date | null;
   memo: string | null;
   requestId: string;
   lines: OrderLineInput[];
 };
-export type OrderCreateErrors = Partial<Record<"partner" | "dueDate" | "memo" | "lines" | "requestId" | "type", string>>;
+export type OrderCreateErrors = Partial<Record<"partnerId" | "dueDate" | "memo" | "lines" | "requestId" | "type", string>>;
 
 /** 품목 줄은 화면에서 JSON 으로 보낸다: [{productId, quantity, unitPrice}] */
 function parseJsonArray(raw: string): unknown[] | null {
@@ -38,11 +40,8 @@ export function parseOrderCreateForm(
   const typeRaw = text(fd, "type");
   const type: OrderTypeCode = typeRaw === "SALES" ? "SALES" : "PURCHASE";
   if (typeRaw !== "SALES" && typeRaw !== "PURCHASE") errors.type = "잘못된 요청입니다.";
-  const partnerLabel = type === "PURCHASE" ? "공급처" : "거래처";
-
-  const partner = text(fd, "partner");
-  if (!partner) errors.partner = `${partnerLabel}를 입력하세요.`;
-  else if (partner.length > L.maxPartnerLength) errors.partner = `${partnerLabel}는 ${L.maxPartnerLength}자 이내로 입력하세요.`;
+  const partner = parsePartnerId(fd, type === "PURCHASE" ? "SUPPLIER" : "CUSTOMER", true);
+  if (partner.error) errors.partnerId = partner.error;
 
   const dueRaw = text(fd, "dueDate");
   let dueDate: Date | null = null;
@@ -79,7 +78,7 @@ export function parseOrderCreateForm(
   }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, data: { type, partner, dueDate, memo: memo.value, requestId: requestId.value, lines } };
+  return { ok: true, data: { type, partnerId: partner.value ?? "", dueDate, memo: memo.value, requestId: requestId.value, lines } };
 }
 
 export type OrderProcessLine = {

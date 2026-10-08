@@ -1,9 +1,10 @@
 import { connection } from "next/server";
 import {
-  listProductsForInbound,
+  searchProductsForInbound,
   listRecentInbounds,
 } from "@/modules/inbound/service";
 import { toKstDateTimeLocal } from "@/lib/datetime";
+import { listPartnerOptions } from "@/modules/partner/service";
 import InboundForm from "./InboundForm";
 import InboundTable, { type InboundRow } from "./InboundTable";
 import Forbidden from "@/components/Forbidden";
@@ -48,13 +49,15 @@ function describeChanges(before: unknown, after: unknown, showPrice: boolean): s
 export default async function InboundPage() {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
   const user = await requirePageUser();
-  if (!can(user.role, "inbound.create")) return <Forbidden title="입고" />;
+  if (!can(user.role, "inbound.view")) return <Forbidden title="입고" />;
   const showPrice = can(user.role, "price.view");
+  const canCreate = can(user.role, "inbound.create");
   const canManage = can(user.role, "inbound.manage");
 
-  const [products, recent] = await Promise.all([
-    listProductsForInbound(),
+  const [{ rows: products, total: productTotal }, recent, suppliers] = await Promise.all([
+    canCreate ? searchProductsForInbound() : Promise.resolve({ rows: [], total: 0 }),
     listRecentInbounds(20),
+    listPartnerOptions("SUPPLIER"),
   ]);
 
   const rows: InboundRow[] = recent.map((r) => ({
@@ -69,7 +72,8 @@ export default async function InboundPage() {
     status: r.status,
     createdByName: r.createdBy?.name ?? null,
     cancelReason: r.cancelReason,
-    supplier: r.supplier,
+    partnerId: r.partnerId,
+    supplier: r.partner?.name ?? null,
     memo: r.memo,
     receivedAtText: dateFmt.format(r.receivedAt),
     receivedAtInput: toKstDateTimeLocal(r.receivedAt),
@@ -86,21 +90,21 @@ export default async function InboundPage() {
     <div>
       <h2 className="mb-4 text-2xl font-semibold tracking-tight">입고</h2>
 
-      {products.length === 0 ? (
+      {!canCreate ? null : productTotal === 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 p-4 text-sm">
           DB에 등록된 상품이 없습니다. 터미널에서 <code>npx prisma db seed</code>를
           실행해 샘플 상품을 넣어주세요.
         </p>
       ) : (
-        <InboundForm products={products} showPrice={showPrice} />
+        <InboundForm products={products} productTotal={productTotal} suppliers={suppliers} showPrice={showPrice} />
       )}
-      {!canManage && (
+      {canCreate && !canManage && (
         <p className="mt-2 text-xs text-muted-foreground">
           등록한 입고는 관리자가 확정하면 재고에 반영됩니다.
         </p>
       )}
 
-      <InboundTable rows={rows} canManage={canManage} showPrice={showPrice} />
+      <InboundTable rows={rows} suppliers={suppliers} canManage={canManage} showPrice={showPrice} />
     </div>
   );
 }

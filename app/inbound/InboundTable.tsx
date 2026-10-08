@@ -6,6 +6,7 @@ import InboundReviewDialog, { type InboundReviewKind } from "./InboundReviewDial
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/EmptyState";
+import type { PartnerOption } from "@/components/PartnerSelect";
 import { PackageIcon } from "lucide-react";
 export type InboundRevisionView = {
   createdAtText: string;
@@ -34,7 +35,8 @@ export type InboundRow = {
   status: InboundStatusCode;
   createdByName: string | null;
   cancelReason: string | null;
-  supplier: string | null;
+  partnerId: string | null;
+  supplier: string | null; // 공급처 이름
   memo: string | null;
   receivedAtText: string; // 표시용
   receivedAtInput: string; // datetime-local 값 (KST)
@@ -45,10 +47,12 @@ export type InboundRow = {
 
 export default function InboundTable({
   rows,
+  suppliers,
   canManage,
   showPrice,
 }: {
   rows: InboundRow[];
+  suppliers: PartnerOption[];
   canManage: boolean;
   showPrice: boolean;
 }) {
@@ -269,6 +273,7 @@ export default function InboundTable({
           // version을 key에 넣으면 저장 직후 목록 갱신 시 다시 마운트되어 성공 상태를 잃음
           key={editing.id}
           row={editing}
+          suppliers={suppliers}
           onClose={() => setEditingId(null)}
           onSaved={finished}
         />

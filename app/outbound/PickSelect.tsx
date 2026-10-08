@@ -7,7 +7,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 const bucketLabel = (code: string | null, expiry: string | null) => `${code ?? "미지정"} · ${expiry ?? "유통기한 미상"}`;
 
 /**
- * 출고 위치 선택: 기본 "자동"(유통기한 미상 → 빠른 순), 또는 칸 하나 지정 (그 칸에서만 출고, 모자라면 서버에서 거부)
+ * 출고 위치 선택: 기본 "자동"(선입선출: 입고일 오래된 순), 또는 칸 하나 지정 (그 칸에서만 출고, 모자라면 서버에서 거부)
  * 상품이 바뀌면 부모에서 key 를 바꿔 새로 만든다
  */
 export default function PickSelect({
@@ -52,7 +52,7 @@ export default function PickSelect({
         onChange={(e) => setValue(e.target.value)}
         disabled={!productId || options === null}
       >
-        <option value="">자동 (유통기한 미상 → 빠른 순)</option>
+        <option value="">자동 (선입선출: 입고일 오래된 순)</option>
         {missingDefault && <option value={defaultValue}>{defaultLabel ?? "지정한 위치"} · 현재 재고 없음</option>}
         {options?.map((o) => (
           <option key={o.value} value={o.value}>

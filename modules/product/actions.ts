@@ -56,8 +56,7 @@ export async function createProductAction(
     if (e instanceof DuplicateSkuError) {
       return {
         status: "error",
-        message: e.message,
-        errors: { sku: "이미 등록된 품목코드입니다." },
+        message: `${e.message} — 다시 등록하면 다음 번호가 부여됩니다.`,
         ts: Date.now(),
       };
     }

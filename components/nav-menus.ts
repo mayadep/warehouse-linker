@@ -11,8 +11,8 @@ export const menuGroups: MenuGroup[] = [
     title: "재고",
     menus: [
       { label: "상품등록", href: "/products/new", perm: "product.create" },
-      { label: "입고", href: "/inbound", perm: "inbound.create" },
-      { label: "출고", href: "/outbound", perm: "outbound.create" },
+      { label: "입고", href: "/inbound", perm: "inbound.view" },
+      { label: "출고", href: "/outbound", perm: "outbound.view" },
       { label: "재고현황", href: "/stock", perm: "stock.view" },
       { label: "창고관리", href: "/warehouses", perm: "admin" },
     ],
@@ -23,11 +23,14 @@ export const menuGroups: MenuGroup[] = [
       { label: "발주", href: "/orders/purchase", perm: "admin" },
       { label: "수주", href: "/orders/sales", perm: "admin" },
       { label: "배차관리", href: "/dispatch", perm: "admin" },
+      { label: "리포트", href: "/reports", perm: "admin" },
     ],
   },
   {
     title: "관리",
     menus: [
+      { label: "공지사항", href: "/notices", perm: "admin" },
+      { label: "거래처", href: "/partners", perm: "admin" },
       { label: "로그", href: "/logs", perm: "admin" },
       { label: "사용자·권한", href: "/users", perm: "admin" },
     ],

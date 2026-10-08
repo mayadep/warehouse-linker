@@ -12,12 +12,12 @@ import {
   parseConfirm,
   parseOptionalDate,
 } from "@/lib/form";
+import { parsePartnerId } from "@/modules/partner/validation";
 import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 
 export const INBOUND_LIMITS = {
   maxQuantity: 1_000_000,
   maxUnitCost: 100_000_000,
-  maxSupplierLength: 100,
   maxMemoLength: 500,
   maxReasonLength: 200,
 } as const;
@@ -26,7 +26,8 @@ export type InboundInput = {
   productId: string;
   quantity: number;
   unitCost: number | null;
-  supplier: string | null;
+  /** 공급처 (거래처 마스터) — 존재·사용 여부는 서비스에서 확인 */
+  partnerId: string | null;
   memo: string | null;
   receivedAt: Date;
 };
@@ -69,7 +70,7 @@ function parseCommon(fd: FormData, now: Date, receivedAtRequired: boolean) {
   return {
     quantity: parseQuantity(fd, INBOUND_LIMITS.maxQuantity, overMax),
     unitCost: parseOptionalMoney(fd, "unitCost", "단가", INBOUND_LIMITS.maxUnitCost),
-    supplier: parseOptionalText(fd, "supplier", "공급처", INBOUND_LIMITS.maxSupplierLength),
+    partnerId: parsePartnerId(fd, "SUPPLIER", false),
     memo: parseOptionalText(fd, "memo", "비고", INBOUND_LIMITS.maxMemoLength),
     receivedAt: parseDateTime(fd, "receivedAt", "입고일시", "입고", now, receivedAtRequired),
   };
@@ -101,7 +102,7 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
       productId,
       quantity: c.quantity.value,
       unitCost: c.unitCost.value,
-      supplier: c.supplier.value,
+      partnerId: c.partnerId.value,
       memo: c.memo.value,
       receivedAt: c.receivedAt.value,
       expiryDate: expiryDate.value,
@@ -135,7 +136,7 @@ export function parseInboundUpdateForm(fd: FormData, now = new Date()): UpdatePa
       version: version.value,
       quantity: c.quantity.value,
       unitCost: c.unitCost.value,
-      supplier: c.supplier.value,
+      partnerId: c.partnerId.value,
       memo: c.memo.value,
       receivedAt: c.receivedAt.value,
       reason: reason.value,

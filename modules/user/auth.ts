@@ -1,3 +1,4 @@
+import "server-only";
 // 로그인 세션 · 현재 사용자 · 권한 확인 (서버 전용)
 import { cache } from "react";
 import { cookies } from "next/headers";

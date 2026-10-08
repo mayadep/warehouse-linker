@@ -84,7 +84,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm md:grid-cols-4">
           <div>
             <dt className="text-xs font-medium text-muted-foreground">{ORDER_PARTNER_LABELS[type]}</dt>
-            <dd className="mt-1 font-medium">{o.partner}</dd>
+            <dd className="mt-1 font-medium">{o.partner.name}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-muted-foreground">{ORDER_DUE_LABELS[type]}</dt>

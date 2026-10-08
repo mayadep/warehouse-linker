@@ -9,7 +9,9 @@ export type AuditCategoryCode =
   | "ORDER"
   | "DISPATCH"
   | "VEHICLE"
-  | "USER";
+  | "USER"
+  | "PARTNER"
+  | "NOTICE";
 
 export const AUDIT_CATEGORIES: AuditCategoryCode[] = [
   "PRODUCT",
@@ -21,6 +23,8 @@ export const AUDIT_CATEGORIES: AuditCategoryCode[] = [
   "DISPATCH",
   "VEHICLE",
   "USER",
+  "PARTNER",
+  "NOTICE",
 ];
 
 export const AUDIT_CATEGORY_LABELS: Record<AuditCategoryCode, string> = {
@@ -33,6 +37,8 @@ export const AUDIT_CATEGORY_LABELS: Record<AuditCategoryCode, string> = {
   DISPATCH: "배차",
   VEHICLE: "차량",
   USER: "사용자",
+  PARTNER: "거래처",
+  NOTICE: "공지사항",
 };
 
 export const AUDIT_CATEGORY_TONE: Record<AuditCategoryCode, "gray" | "slate" | "indigo" | "sky" | "amber" | "green" | "red"> = {
@@ -45,6 +51,8 @@ export const AUDIT_CATEGORY_TONE: Record<AuditCategoryCode, "gray" | "slate" | "
   DISPATCH: "red",
   VEHICLE: "gray",
   USER: "slate",
+  PARTNER: "sky",
+  NOTICE: "indigo",
 };
 
 /** 작업 코드 → 표시명 */
@@ -95,6 +103,10 @@ export const AUDIT_ACTION_LABELS = {
   USER_UPDATE: "사용자 수정",
   USER_PASSWORD_RESET: "비밀번호 재설정",
   USER_PASSWORD_CHANGE: "비밀번호 변경",
+  PARTNER_CREATE: "거래처 등록",
+  PARTNER_UPDATE: "거래처 수정",
+  NOTICE_CREATE: "공지 등록",
+  NOTICE_UPDATE: "공지 수정",
 } as const satisfies Record<string, string>;
 
 export type AuditActionCode = keyof typeof AUDIT_ACTION_LABELS;
@@ -153,4 +165,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   loginId: "아이디",
   role: "역할",
   isActive: "사용 여부",
+  title: "제목",
+  body: "내용",
+  isPinned: "상단 고정",
+  isPublished: "게시 여부",
 };

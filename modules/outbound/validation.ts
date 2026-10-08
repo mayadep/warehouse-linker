@@ -12,13 +12,13 @@ import {
   parseConfirm,
   type FieldResult,
 } from "@/lib/form";
+import { parsePartnerId } from "@/modules/partner/validation";
 import { isDateOnly } from "@/lib/datetime";
 import type { StockBucket } from "@/modules/stock/service";
 
 export const OUTBOUND_LIMITS = {
   maxQuantity: 1_000_000,
   maxUnitPrice: 100_000_000,
-  maxCustomerLength: 100,
   maxMemoLength: 500,
   maxReasonLength: 200,
 } as const;
@@ -27,7 +27,8 @@ export type OutboundInput = {
   productId: string;
   quantity: number;
   unitPrice: number | null;
-  customer: string | null;
+  /** 출고처 (거래처 마스터) — 존재·사용 여부는 서비스에서 확인 */
+  partnerId: string | null;
   memo: string | null;
   shippedAt: Date;
 };
@@ -62,7 +63,7 @@ function parseCommon(fd: FormData, now: Date, shippedAtRequired: boolean) {
   return {
     quantity: parseQuantity(fd, OUTBOUND_LIMITS.maxQuantity, overMax),
     unitPrice: parseOptionalMoney(fd, "unitPrice", "출고단가", OUTBOUND_LIMITS.maxUnitPrice),
-    customer: parseOptionalText(fd, "customer", "출고처", OUTBOUND_LIMITS.maxCustomerLength),
+    partnerId: parsePartnerId(fd, "CUSTOMER", false),
     memo: parseOptionalText(fd, "memo", "비고", OUTBOUND_LIMITS.maxMemoLength),
     shippedAt: parseDateTime(fd, "shippedAt", "출고일시", "출고", now, shippedAtRequired),
   };
@@ -89,7 +90,7 @@ export function parseOutboundForm(fd: FormData, now = new Date()): OutboundParse
       productId,
       quantity: c.quantity.value,
       unitPrice: c.unitPrice.value,
-      customer: c.customer.value,
+      partnerId: c.partnerId.value,
       memo: c.memo.value,
       shippedAt: c.shippedAt.value,
       pick: pick.value,
@@ -120,7 +121,7 @@ export function parseOutboundUpdateForm(fd: FormData, now = new Date()): Outboun
       version: version.value,
       quantity: c.quantity.value,
       unitPrice: c.unitPrice.value,
-      customer: c.customer.value,
+      partnerId: c.partnerId.value,
       memo: c.memo.value,
       shippedAt: c.shippedAt.value,
       reason: reason.value,

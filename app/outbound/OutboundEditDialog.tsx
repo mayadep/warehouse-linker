@@ -8,16 +8,19 @@ import {
 import type { OutboundRow } from "./OutboundTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PartnerSelect, { type PartnerOption } from "@/components/PartnerSelect";
 const initialState: OutboundUpdateActionState = { status: "idle", message: "" };
 const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 export default function OutboundEditDialog({
   row,
+  customers,
   onClose,
   onSaved,
 }: {
   row: OutboundRow;
+  customers: PartnerOption[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -124,8 +127,13 @@ export default function OutboundEditDialog({
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             출고처
-            <Input name="customer" maxLength={100} className={input} defaultValue={row.customer ?? ""} />
-            {err.customer && <span className={errText}>{err.customer}</span>}
+            <PartnerSelect
+              options={customers}
+              label="출고처"
+              defaultValue={row.partnerId ?? ""}
+              current={row.partnerId ? { id: row.partnerId, name: row.customer ?? "" } : null}
+            />
+            {err.partnerId && <span className={errText}>{err.partnerId}</span>}
           </label>
           <label className="flex-1 text-sm">
             출고일시

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import PartnerSelect, { type PartnerOption } from "@/components/PartnerSelect";
 export type OrderProductOption = {
   id: string;
   sku: string;
@@ -38,7 +39,7 @@ function CreateForm({
 }: {
   type: OrderTypeCode;
   products: OrderProductOption[];
-  partners: string[];
+  partners: PartnerOption[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -93,13 +94,8 @@ function CreateForm({
         <div className="flex gap-3">
           <label className="flex-1">
             {ORDER_PARTNER_LABELS[type]}
-            <Input name="partner" list="order-partners" maxLength={ORDER_LIMITS.maxPartnerLength} className={input} />
-            <datalist id="order-partners">
-              {partners.map((p) => (
-                <option key={p} value={p} />
-              ))}
-            </datalist>
-            {err.partner && <span className="text-xs text-red-600">{err.partner}</span>}
+            <PartnerSelect options={partners} label={ORDER_PARTNER_LABELS[type]} required />
+            {err.partnerId && <span className="text-xs text-red-600">{err.partnerId}</span>}
           </label>
           <label className="w-44">
             {ORDER_DUE_LABELS[type]} (선택)
@@ -198,7 +194,7 @@ function CreateForm({
   );
 }
 
-export default function OrderCreateButton(props: { type: OrderTypeCode; products: OrderProductOption[]; partners: string[] }) {
+export default function OrderCreateButton(props: { type: OrderTypeCode; products: OrderProductOption[]; partners: PartnerOption[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>

@@ -17,7 +17,7 @@ type Mode = "expiry" | "move";
 
 /**
  * 위치·유통기한별 재고 (재고 원장 팝업)
- * - 위에서부터 자동 출고 순서 (유통기한 미상 → 빠른 순)
+ * - 위에서부터 자동 출고 순서 (선입선출: 입고일 오래된 순)
  * - 관리자는 칸마다 유통기한 입력·변경, 위치 이동 (일부 수량만도 가능)
  */
 export default function StockBalanceSection({
@@ -39,12 +39,13 @@ export default function StockBalanceSection({
   return (
     <div>
       <p className="mb-1 text-xs text-gray-500">
-        위치·유통기한별 재고 {balances.length}칸 · 위에서부터 자동 출고 (유통기한 미상 → 빠른 순)
+        위치·유통기한별 재고 {balances.length}칸 · 위에서부터 자동 출고 (선입선출: 입고일 오래된 순)
       </p>
       <table className="data-table">
         <thead>
           <tr>
             <th className="left">위치</th>
+            <th>입고일</th>
             <th>유통기한</th>
             <th className="num">수량</th>
             {canEdit && <th>관리</th>}
@@ -53,7 +54,7 @@ export default function StockBalanceSection({
         <tbody>
           {balances.length === 0 && (
             <tr>
-              <td colSpan={canEdit ? 4 : 3} className="text-gray-400">
+              <td colSpan={canEdit ? 5 : 4} className="text-gray-400">
                 재고가 없습니다.
               </td>
             </tr>
@@ -269,6 +270,7 @@ function BalanceRow({
     <>
       <tr>
         <td className="left font-mono">{b.locationCode ?? <span className="text-gray-400">미지정</span>}</td>
+        <td className="tabular-nums">{b.lotDate ?? <span className="text-gray-400">미상</span>}</td>
         <td>{b.expiryDate ?? <span className="text-gray-400">미상</span>}</td>
         <td className="num">
           {b.quantity.toLocaleString()} {baseUnit}
@@ -288,7 +290,7 @@ function BalanceRow({
       </tr>
       {mode && (
         <tr>
-          <td colSpan={4} className="left bg-gray-50">
+          <td colSpan={5} className="left bg-gray-50">
             {children}
           </td>
         </tr>

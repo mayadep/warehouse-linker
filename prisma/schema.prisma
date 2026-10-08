@@ -17,6 +17,7 @@ model Product {
   baseUnit    ProductUnit @default(EA) // 기본단위 (재고 수량의 단위)
   boxQty      Int      @default(1)    // 박스당 입수 (BOX 단위 상품은 1)
   trackExpiry Boolean  @default(true) // 유통기한 관리 여부
+  storageTemp StorageTemp @default(AMBIENT) // 보관 온도 (상온/냉장/냉동)
   safetyStock Int      @default(0)    // 안전재고 (현재고가 이 값 이하이면 '부족', DB CHECK >= 0)
   locationId  String?  @unique        // 기본 보관위치 (한 칸에 한 상품만)
   location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
@@ -47,6 +48,12 @@ enum ProductStatus {
   INACTIVE // 단종·비활성 (목록에서 숨김, 입출고·주문·위치 배정 불가, 이력은 보존)
 }
 
+enum StorageTemp {
+  AMBIENT // 상온
+  CHILLED // 냉장
+  FROZEN  // 냉동
+}
+
 enum ProductUnit {
   EA  // 개
   BOX // 박스
@@ -62,7 +69,8 @@ model Inbound {
   product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity   Int      // 입고 수량 (기본단위, 양수)
   unitCost   Int?     // 입고 단가 (원)
-  supplier   String?  // 공급처
+  partnerId  String?  // 공급처 (거래처 마스터)
+  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   memo       String?  // 비고
   receivedAt DateTime @default(now()) // 입고일시
   version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
@@ -89,6 +97,7 @@ model Inbound {
   revisions      InboundRevision[]
 
   @@index([productId, receivedAt])
+  @@index([partnerId])
   @@index([receivedAt])
   @@index([orderLineId])
   @@index([status, receivedAt])
@@ -122,10 +131,11 @@ model StockBalance {
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   expiryDate DateTime? @db.Date
+  lotDate    DateTime? @db.Date // 입고일(KST) — 선입선출 기준. null = 입고일 미상(이관된 기존 재고, 가장 먼저 출고)
   quantity   Int       // DB CHECK > 0
   updatedAt  DateTime  @updatedAt
 
-  @@unique([productId, locationId, expiryDate])
+  @@unique([productId, locationId, expiryDate, lotDate])
   @@index([locationId])
 }
 
@@ -145,6 +155,7 @@ model StockMovement {
   locationId  String?           // 변동된 칸의 위치 (null = 미지정)
   location    Location?         @relation(fields: [locationId], references: [id], onDelete: Restrict)
   expiryDate  DateTime?         @db.Date // 변동된 칸의 유통기한 (null = 미상)
+  lotDate     DateTime?         @db.Date // 변동된 칸의 입고일 (null = 미상)
   createdAt   DateTime          @default(now())
 
   inboundRevision  InboundRevision?
@@ -178,7 +189,8 @@ model Outbound {
   product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity   Int      // 출고 수량 (기본단위, 양수)
   unitPrice  Int?     // 출고 단가 (원, 기본값은 상품 판매가)
-  customer   String?  // 출고처
+  partnerId  String?  // 출고처 (거래처 마스터)
+  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   memo       String?  // 비고
   shippedAt  DateTime @default(now()) // 출고일시
   version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
@@ -209,6 +221,7 @@ model Outbound {
   dispatchItem   DispatchItem?      // 배차된 경우 (확정 출고만 배차 가능)
 
   @@index([productId, shippedAt])
+  @@index([partnerId])
   @@index([shippedAt])
   @@index([orderLineId])
   @@index([status, shippedAt])
@@ -326,12 +339,34 @@ enum TradeOrderStatus {
   CANCELLED // 취소 (처리 이력 없을 때만)
 }
 
+// 거래처 마스터 (공급처·출고처). 이름은 대소문자 무시로 중복 불가 (DB 유니크 인덱스 lower("name"))
+enum PartnerType {
+  SUPPLIER // 공급처 (입고·발주)
+  CUSTOMER // 출고처 (출고·수주)
+  BOTH     // 둘 다
+}
+
+model Partner {
+  id        String      @id @default(uuid())
+  name      String
+  type      PartnerType
+  isActive  Boolean     @default(true) // false = 새 입출고·주문에 선택 불가 (기존 기록은 유지)
+  version   Int         @default(0)    // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  inbounds  Inbound[]
+  outbounds Outbound[]
+  orders    TradeOrder[]
+}
+
 // 발주서 / 수주서
 model TradeOrder {
   id        String           @id @default(uuid())
   type      TradeOrderType
   orderNo   String           @unique // PO-20261001-001 / SO-20261001-001
-  partner   String           // 공급처(발주) 또는 거래처(수주)
+  partnerId String           // 공급처(발주) 또는 거래처(수주) — 거래처 마스터
+  partner   Partner          @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   status    TradeOrderStatus @default(OPEN)
   dueDate   DateTime?        // 입고 예정일 / 납기일 (KST 자정)
   memo      String?
@@ -343,6 +378,7 @@ model TradeOrder {
   lines TradeOrderLine[]
 
   @@index([type, status, createdAt])
+  @@index([partnerId])
 }
 
 // 발주/수주 품목
@@ -429,6 +465,8 @@ model DispatchItem {
 enum UserRole {
   STAFF // 직원: 상품등록·입고등록·출고등록 (대기 상태로)
   ADMIN // 관리자: 확정·취소·삭제·금액 보기·모든 메뉴
+  WAREHOUSE // 입출고 담당: 입고·출고 등록·확정·수정·취소(금액 포함), 상품등록(대기), 재고 조회
+  VIEWER // 조회 전용: 입고·출고 내역, 재고현황 조회만 (금액 제외)
 }
 
 model User {
@@ -485,6 +523,8 @@ enum AuditCategory {
   DISPATCH  // 배차
   VEHICLE   // 차량
   USER      // 사용자·로그인
+  PARTNER   // 거래처
+  NOTICE    // 공지사항
 }
 
 // 모든 등록·수정·처리 작업 기록. 추가만 가능 (DB 트리거로 UPDATE·DELETE·TRUNCATE 차단)
@@ -502,4 +542,20 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([category, createdAt])
+}
+
+// 공지사항 (관리자가 작성, 대시보드에 게시 중인 글만 표시). 삭제 없이 게시 중지로 내린다
+model Notice {
+  id          String   @id @default(uuid())
+  title       String
+  body        String
+  isPinned    Boolean  @default(false) // 상단 고정
+  isPublished Boolean  @default(true)  // false = 대시보드에서 숨김
+  authorName  String   // 작성자 이름 (작성 시점 보존)
+  version     Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId   String?  @unique         // 등록 요청 고유키
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, isPinned, createdAt])
 }

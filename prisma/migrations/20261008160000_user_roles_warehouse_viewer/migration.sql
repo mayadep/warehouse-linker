@@ -1,0 +1,3 @@
+-- 역할 세분화: 입출고 담당(WAREHOUSE), 조회 전용(VIEWER)
+ALTER TYPE "UserRole" ADD VALUE 'WAREHOUSE';
+ALTER TYPE "UserRole" ADD VALUE 'VIEWER';

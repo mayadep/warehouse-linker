@@ -6,6 +6,7 @@ import OutboundReviewDialog, { type OutboundReviewKind } from "./OutboundReviewD
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/EmptyState";
+import type { PartnerOption } from "@/components/PartnerSelect";
 import { TruckIcon } from "lucide-react";
 export type OutboundRevisionView = {
   createdAtText: string;
@@ -40,7 +41,8 @@ export type OutboundRow = {
   createdByName: string | null;
   cancelReason: string | null;
   dispatchNo: string | null; // 배차된 경우 배차번호
-  customer: string | null;
+  partnerId: string | null;
+  customer: string | null; // 출고처 이름
   memo: string | null;
   shippedAtText: string; // 표시용
   shippedAtInput: string; // datetime-local 값 (KST)
@@ -51,10 +53,12 @@ export type OutboundRow = {
 
 export default function OutboundTable({
   rows,
+  customers,
   canManage,
   showPrice,
 }: {
   rows: OutboundRow[];
+  customers: PartnerOption[];
   canManage: boolean;
   showPrice: boolean;
 }) {
@@ -279,6 +283,7 @@ export default function OutboundTable({
           // version을 key에 넣으면 저장 직후 목록 갱신 시 다시 마운트되어 성공 상태를 잃음
           key={editing.id}
           row={editing}
+          customers={customers}
           onClose={() => setEditingId(null)}
           onSaved={finished}
         />

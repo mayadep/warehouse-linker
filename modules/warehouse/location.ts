@@ -1,3 +1,4 @@
+import "server-only";
 // 상품 보관위치 직접 변경 (변경·교환·해제) + 이력
 import { prisma } from "@/lib/prisma";
 import { storageTypeForCategory } from "./assign";

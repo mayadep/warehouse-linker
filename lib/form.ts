@@ -12,6 +12,11 @@ export function text(fd: FormData, key: string): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+/** 수량 입력 단위: BOX 면 박스 수로 입력 (서버에서 박스당 입수를 곱해 기본단위로 환산) */
+export function isBoxQtyUnit(fd: FormData): boolean {
+  return text(fd, "qtyUnit") === "BOX";
+}
+
 /** 1 이상 정수 수량 */
 export function parseQuantity(fd: FormData, max: number, overMaxMessage: string): FieldResult<number> {
   const raw = text(fd, "quantity").replaceAll(",", "");

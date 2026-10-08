@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { connection } from "next/server";
-import { listCategories, listProducts } from "@/modules/product/service";
+import { listCategories, listProducts, PRODUCT_PAGE_SIZE } from "@/modules/product/service";
+import { STORAGE_TEMP_LABELS } from "@/modules/product/storage";
 import ProductForm from "./ProductForm";
 import ProductReviewButtons from "./ProductReviewButtons";
 import Forbidden from "@/components/Forbidden";
@@ -7,14 +9,27 @@ import { Badge } from "@/components/ui/badge";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import ProductManageButtons from "./ProductManageButtons";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EmptyState from "@/components/EmptyState";
-import { PackageIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PackageIcon } from "lucide-react";
+
+/** 현재 페이지 주변 번호 (1 … 4 5 [6] 7 8 … 20) */
+function pageNumbers(page: number, total: number): (number | "…")[] {
+  const set = new Set([1, total, page - 2, page - 1, page, page + 1, page + 2]);
+  const nums = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  nums.forEach((n, i) => {
+    if (i > 0 && n - nums[i - 1] > 1) out.push("…");
+    out.push(n);
+  });
+  return out;
+}
+
 export default async function NewProductPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[]; inactive?: string | string[] }>;
+  searchParams: Promise<{ q?: string | string[]; inactive?: string | string[]; page?: string | string[] }>;
 }) {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
   const user = await requirePageUser();
@@ -23,16 +38,25 @@ export default async function NewProductPage({
   const canConfirm = can(user.role, "product.confirm");
   const canManage = can(user.role, "product.manage");
 
-  const { q, inactive } = await searchParams;
+  const { q, inactive, page: pageParam } = await searchParams;
   const keyword = (Array.isArray(q) ? q[0] : q)?.trim().slice(0, 50) ?? "";
   const includeInactive = (Array.isArray(inactive) ? inactive[0] : inactive) === "1";
+  const pageNo = Number((Array.isArray(pageParam) ? pageParam[0] : pageParam)?.trim());
 
-  const [list, categories] = await Promise.all([
-    listProducts(keyword, includeInactive),
+  const [{ rows: list, total, pendingCount, page, totalPages }, categories] = await Promise.all([
+    listProducts(keyword, includeInactive, Number.isInteger(pageNo) && pageNo >= 1 ? pageNo : 1),
     listCategories(),
   ]);
-  const pendingCount = list.filter((p) => p.status === "PENDING").length;
-  const colCount = 9 + (showPrice ? 1 : 0) + (canConfirm || canManage ? 1 : 0);
+  /** 검색어·비활성 포함 조건을 유지한 채 페이지만 바꾼 주소 */
+  const pageHref = (p: number) => {
+    const sp = new URLSearchParams();
+    if (keyword) sp.set("q", keyword);
+    if (includeInactive) sp.set("inactive", "1");
+    if (p > 1) sp.set("page", String(p));
+    const qs = sp.toString();
+    return qs ? `/products/new?${qs}` : "/products/new";
+  };
+  const colCount = 10 + (showPrice ? 1 : 0) + (canConfirm || canManage ? 1 : 0);
 
   return (
     <div>
@@ -47,8 +71,9 @@ export default async function NewProductPage({
 
       <div className="mt-10 mb-2 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-500">
-          {keyword ? `"${keyword}" 검색 결과` : "등록된 상품"} {list.length}개
-          {pendingCount > 0 && <span className="ml-2 font-medium text-amber-700">확정 대기 {pendingCount}개</span>}
+          {keyword ? `"${keyword}" 검색 결과` : "등록된 상품"} {total.toLocaleString()}개
+          {total > 0 && ` · ${((page - 1) * PRODUCT_PAGE_SIZE + 1).toLocaleString()}–${Math.min(page * PRODUCT_PAGE_SIZE, total).toLocaleString()} 표시`}
+          {pendingCount > 0 && <span className="ml-2 font-medium text-amber-700">확정 대기 {pendingCount.toLocaleString()}개</span>}
         </p>
         <div className="flex items-center gap-2">
           <form className="flex items-center gap-2">
@@ -74,6 +99,7 @@ export default async function NewProductPage({
             <th className="left">코드</th>
             <th className="left">품명</th>
             <th>분류</th>
+            <th>보관</th>
             <th>단위</th>
             <th>박스당 입수</th>
             <th>유통기한</th>
@@ -97,6 +123,7 @@ export default async function NewProductPage({
               <td className="left">{p.sku}</td>
               <td className="left">{p.name}</td>
               <td>{p.category}</td>
+              <td>{STORAGE_TEMP_LABELS[p.storageTemp]}</td>
               <td>{p.baseUnit}</td>
               <td>{p.baseUnit === "BOX" ? "-" : `1BOX = ${p.boxQty}${p.baseUnit}`}</td>
               <td>{p.trackExpiry ? "관리" : "-"}</td>
@@ -117,6 +144,7 @@ export default async function NewProductPage({
                         sku: p.sku,
                         name: p.name,
                         category: p.category,
+                        storageTemp: p.storageTemp,
                         price: p.price,
                         baseUnit: p.baseUnit,
                         boxQty: p.boxQty,
@@ -135,6 +163,48 @@ export default async function NewProductPage({
         </tbody>
       </table>
 </div>
+
+      {totalPages > 1 && (
+        <nav className="mt-5 flex flex-wrap items-center justify-center gap-1" aria-label="페이지">
+          {page > 1 ? (
+            <Link href={pageHref(page - 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <ChevronLeftIcon data-icon="inline-start" />
+              이전
+            </Link>
+          ) : (
+            <span className={buttonVariants({ variant: "outline", size: "sm" }) + " pointer-events-none opacity-50"}>
+              <ChevronLeftIcon data-icon="inline-start" />
+              이전
+            </span>
+          )}
+          {pageNumbers(page, totalPages).map((n, i) =>
+            n === "…" ? (
+              <span key={`gap-${i}`} className="px-1 text-muted-foreground">
+                …
+              </span>
+            ) : n === page ? (
+              <span key={n} aria-current="page" className={buttonVariants({ size: "sm" }) + " min-w-8 tabular-nums"}>
+                {n}
+              </span>
+            ) : (
+              <Link key={n} href={pageHref(n)} className={buttonVariants({ variant: "ghost", size: "sm" }) + " min-w-8 tabular-nums"}>
+                {n}
+              </Link>
+            )
+          )}
+          {page < totalPages ? (
+            <Link href={pageHref(page + 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              다음
+              <ChevronRightIcon data-icon="inline-end" />
+            </Link>
+          ) : (
+            <span className={buttonVariants({ variant: "outline", size: "sm" }) + " pointer-events-none opacity-50"}>
+              다음
+              <ChevronRightIcon data-icon="inline-end" />
+            </span>
+          )}
+        </nav>
+      )}
     </div>
   );
 }

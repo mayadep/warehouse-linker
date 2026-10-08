@@ -1,3 +1,4 @@
+import "server-only";
 // 감사 로그 기록 (추가만 가능 — 수정·삭제 함수는 두지 않으며 DB 트리거가 UPDATE·DELETE 를 차단)
 import type { Prisma } from "@prisma/client";
 import { toKstDateTimeLocal } from "@/lib/datetime";

@@ -7,6 +7,7 @@ import {
   parseInboundForm,
   parseInboundUpdateForm,
   parseInboundVoidForm,
+  INBOUND_LIMITS,
   type InboundFieldErrors,
   type InboundUpdateFieldErrors,
 } from "./validation";
@@ -19,7 +20,10 @@ import {
   findSimilarInbound,
   findInboundStorageWarning,
   InboundError,
+  searchProductsForInbound,
 } from "./service";
+import { convertBoxesToBase, normalizeProductKeyword } from "@/modules/product/service";
+import { isBoxQtyUnit } from "@/lib/form";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", {
@@ -57,14 +61,23 @@ export async function createInboundAction(
     };
   }
 
+  // 박스 단위 입력이면 서버에서 박스당 입수를 곱해 기본단위로 환산
+  const d = { ...parsed.data };
+  let boxNote = "";
+  if (isBoxQtyUnit(formData)) {
+    const conv = await convertBoxesToBase(d.productId, d.quantity, INBOUND_LIMITS.maxQuantity, "입고");
+    if (!conv.ok) return { status: "error", message: conv.message, errors: { quantity: conv.message }, ts: Date.now() };
+    boxNote = ` (${d.quantity.toLocaleString()}박스 × ${conv.boxQty.toLocaleString()}${conv.unit})`;
+    d.quantity = conv.quantity;
+  }
+
   // 경고 확인: 유사 입고 + 보관 온도 (확인 후 재요청이면 건너뜀, 온도는 확인한 위치코드가 같을 때만)
   const warnings: string[] = [];
-  const d = parsed.data;
   if (!d.confirmDuplicate) {
     const similar = await findSimilarInbound(d);
     if (similar) {
       warnings.push(
-        `${timeFmt.format(similar.createdAt)}에 같은 입고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.supplier ? ` (${similar.supplier})` : ""}.`
+        `${timeFmt.format(similar.createdAt)}에 같은 입고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.partner ? ` (${similar.partner.name})` : ""}.`
       );
     }
   }
@@ -81,7 +94,7 @@ export async function createInboundAction(
   }
 
   try {
-    const result = await createInbound(parsed.data, actor);
+    const result = await createInbound(d, actor);
     revalidatePath("/inbound");
     revalidatePath("/outbound"); // 출고 화면 현재고
     revalidatePath("/products/new");
@@ -89,8 +102,8 @@ export async function createInboundAction(
       status: "success",
       message:
         result.afterStock === null
-          ? `${result.productName} ${parsed.data.quantity.toLocaleString()}개 입고 등록 — 관리자가 확정하면 재고에 반영됩니다.`
-          : `${result.productName} ${parsed.data.quantity.toLocaleString()}개 입고 완료 (현재고 ${result.afterStock.toLocaleString()})`,
+          ? `${result.productName} ${d.quantity.toLocaleString()}개${boxNote} 입고 등록 — 관리자가 확정하면 재고에 반영됩니다.`
+          : `${result.productName} ${d.quantity.toLocaleString()}개${boxNote} 입고 완료 (현재고 ${result.afterStock.toLocaleString()})`,
       ts: Date.now(),
     };
   } catch (e) {
@@ -111,6 +124,12 @@ export async function createInboundAction(
   }
 }
 
+/** 입고 화면 상품 선택용 서버 검색 (코드·품명·분류, 최대 20개) */
+export async function searchInboundProductsAction(keyword: string) {
+  if (!(await authorize("inbound.create"))) return null;
+  return searchProductsForInbound(normalizeProductKeyword(keyword));
+}
+
 export type InboundUpdateActionState = {
   status: "idle" | "success" | "error";
   message: string;
@@ -121,7 +140,7 @@ export type InboundUpdateActionState = {
 const FIELD_LABELS: Record<string, string> = {
   quantity: "수량",
   unitCost: "단가",
-  supplier: "공급처",
+  partnerId: "공급처",
   memo: "비고",
   receivedAt: "입고일시",
 };

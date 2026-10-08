@@ -1,3 +1,4 @@
+import "server-only";
 // 재고현황·재고원장 조회 (읽기 전용)
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -267,8 +268,8 @@ export async function getStockLedger(productId: string, limit = 50) {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
       include: {
-        inbound: { select: { supplier: true, receivedAt: true, memo: true, cancelReason: true } },
-        outbound: { select: { customer: true, shippedAt: true, memo: true, cancelReason: true } },
+        inbound: { select: { partner: { select: { name: true } }, receivedAt: true, memo: true, cancelReason: true } },
+        outbound: { select: { partner: { select: { name: true } }, shippedAt: true, memo: true, cancelReason: true } },
         inboundRevision: { select: { reason: true } },
         outboundRevision: { select: { reason: true } },
         location: { select: { code: true } },
@@ -280,11 +281,33 @@ export async function getStockLedger(productId: string, limit = 50) {
   return { product, total, movements, balances };
 }
 
-/** 상품의 칸별 재고: 유통기한 미상 → 빠른 순 (자동 출고 순서와 같음) */
+/**
+ * 상품의 칸별 재고 (위치·유통기한 단위로 입고일별 재고를 합침). 자동 출고(선입선출) 순서와 같게:
+ * 가장 오래된 입고일 먼저(미상 → 가장 먼저) → 유통기한 미상 → 빠른 순 → 위치 코드
+ * lotDate = 그 칸에서 가장 오래된 입고일 (null = 입고일 미상 재고가 있음)
+ */
 export async function listProductBalances(productId: string) {
-  return prisma.stockBalance.findMany({
+  const rows = await prisma.stockBalance.findMany({
     where: { productId },
-    orderBy: [{ expiryDate: { sort: "asc", nulls: "first" } }, { location: { code: "asc" } }],
-    select: { locationId: true, expiryDate: true, quantity: true, location: { select: { code: true } } },
+    select: { locationId: true, expiryDate: true, lotDate: true, quantity: true, location: { select: { code: true } } },
   });
+  const groups = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    const key = `${r.locationId ?? ""}|${r.expiryDate?.getTime() ?? ""}`;
+    const g = groups.get(key);
+    if (!g) {
+      groups.set(key, { ...r });
+      continue;
+    }
+    g.quantity += r.quantity;
+    // 가장 오래된 입고일 (미상이 하나라도 있으면 미상)
+    g.lotDate = g.lotDate === null || r.lotDate === null ? null : r.lotDate < g.lotDate ? r.lotDate : g.lotDate;
+  }
+  const t = (d: Date | null) => (d === null ? -Infinity : d.getTime());
+  return [...groups.values()].sort(
+    (a, b) =>
+      t(a.lotDate) - t(b.lotDate) ||
+      t(a.expiryDate) - t(b.expiryDate) ||
+      (a.location?.code ?? "").localeCompare(b.location?.code ?? "")
+  );
 }

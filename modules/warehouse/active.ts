@@ -1,3 +1,4 @@
+import "server-only";
 // 창고·랙 비활성화 / 다시 사용 + 새 위치로 지정할 칸의 사용 가능 여부 검사
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";

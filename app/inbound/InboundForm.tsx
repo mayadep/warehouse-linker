@@ -1,20 +1,24 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useActionState, useEffect, useRef, useState, startTransition } from "react";
 import {
   createInboundAction,
+  searchInboundProductsAction,
   type InboundActionState,
 } from "@/modules/inbound/actions";
 import { newRequestId } from "@/lib/request-id";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import PartnerSelect, { type PartnerOption } from "@/components/PartnerSelect";
 export type InboundProductOption = {
   id: string;
   sku: string;
   name: string;
   category: string;
   stock: number;
+  baseUnit: string;
+  boxQty: number;
   location: { code: string } | null;
 };
 
@@ -24,9 +28,15 @@ const input = "w-full";
 
 export default function InboundForm({
   products,
+  productTotal,
+  suppliers,
   showPrice,
 }: {
+  /** 처음 보여줄 상품(서버에서 가져온 앞쪽 일부) */
   products: InboundProductOption[];
+  /** 입고 가능한 전체 상품 수 */
+  productTotal: number;
+  suppliers: PartnerOption[];
   showPrice: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -38,6 +48,13 @@ export default function InboundForm({
   const requestIdRef = useRef<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [productId, setProductId] = useState("");
+  // 서버 검색 결과(목록), 검색 결과 전체 개수, 고른 상품(검색어가 바뀌어도 유지)
+  const [options, setOptions] = useState(products);
+  const [total, setTotal] = useState(productTotal);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState<InboundProductOption | null>(null);
+  const [qtyUnit, setQtyUnit] = useState<"BASE" | "BOX">("BASE");
+  const [quantityText, setQuantityText] = useState("");
 
   // 성공 시 폼 초기화 (실패 시에는 입력값 유지)
   // 제어 상태는 렌더 중 1회 갱신, DOM 입력값은 effect에서 reset
@@ -45,7 +62,10 @@ export default function InboundForm({
   if (state.status === "success" && state.ts !== handledTs) {
     setHandledTs(state.ts);
     setProductId("");
+    setPicked(null);
     setKeyword("");
+    setQtyUnit("BASE");
+    setQuantityText("");
   }
   useEffect(() => {
     if (state.status === "success") {
@@ -54,18 +74,39 @@ export default function InboundForm({
     }
   }, [state]);
 
-  const filtered = useMemo(() => {
-    const k = keyword.trim().toLowerCase();
-    if (!k) return products;
-    return products.filter(
-      (p) =>
-        p.sku.toLowerCase().includes(k) ||
-        p.name.toLowerCase().includes(k) ||
-        p.category.toLowerCase().includes(k)
-    );
-  }, [keyword, products]);
 
-  const selected = products.find((p) => p.id === productId);
+  // 서버 검색: 입력이 멈춘 뒤 0.25초에 조회 (빈 검색어는 처음 목록으로 되돌림)
+  useEffect(() => {
+    const k = keyword.trim();
+    let alive = true;
+    const t = setTimeout(() => {
+      if (!k) {
+        setOptions(products);
+        setTotal(productTotal);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      searchInboundProductsAction(k).then((r) => {
+        if (!alive) return;
+        if (r) {
+          setOptions(r.rows);
+          setTotal(r.total);
+        }
+        setSearching(false);
+      });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [keyword, products, productTotal]);
+
+  const selected = productId ? picked : null;
+  // 박스 입력은 기본단위가 박스가 아니고 입수가 2 이상인 상품만
+  const canBox = !!selected && selected.baseUnit !== "BOX" && selected.boxQty > 1;
+  const useBox = canBox && qtyUnit === "BOX";
+  const qtyNum = /^\d+$/.test(quantityText) ? Number(quantityText) : 0;
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,20 +143,29 @@ export default function InboundForm({
           aria-label="상품"
           className={input}
           value={productId}
-          onChange={(e) => setProductId(e.target.value)}
+          onChange={(e) => {
+            setProductId(e.target.value);
+            setPicked(options.find((p) => p.id === e.target.value) ?? null);
+            setQtyUnit("BASE");
+          }}
           required>
-          <option value="">-- 상품 선택 ({filtered.length}개) --</option>
-          {selected && !filtered.includes(selected) && (
+          <option value="">
+            -- 상품 선택 ({searching ? "검색 중..." : total > options.length ? `${options.length}개 표시 · 검색 결과 ${total.toLocaleString()}개` : `${options.length}개`}) --
+          </option>
+          {selected && !options.some((p) => p.id === selected.id) && (
             <option value={selected.id}>
               [{selected.sku}] {selected.name}
             </option>
           )}
-          {filtered.map((p) => (
+          {options.map((p) => (
             <option key={p.id} value={p.id}>
               [{p.sku}] {p.name} · {p.category}
             </option>
           ))}
         </NativeSelect>
+        {!searching && total > options.length && (
+          <p className="mt-1 text-xs text-gray-500">검색 결과가 많아 앞쪽 {options.length}개만 보입니다. 검색어를 더 입력해 좁혀 보세요.</p>
+        )}
         {selected && (
           <p className="mt-1 text-xs text-gray-500">
             현재고 {selected.stock.toLocaleString()}
@@ -125,18 +175,34 @@ export default function InboundForm({
         {err.productId && <p className="mt-1 text-xs text-red-600">{err.productId}</p>}
       </div>
 
-      <label className="text-sm">
-        입고 수량
-        <Input
-          name="quantity"
-          type="number"
-          min={1}
-          step={1}
-          required
-          className={`${input} text-right tabular-nums`}
-          placeholder="0" />
+      <div className="text-sm">
+        <label htmlFor="inbound-quantity">입고 수량{useBox && selected ? " (박스)" : selected ? ` (${selected.baseUnit})` : ""}</label>
+        <div className="flex gap-2">
+          <Input
+            id="inbound-quantity"
+            name="quantity"
+            type="number"
+            min={1}
+            step={1}
+            required
+            className={`${input} text-right tabular-nums`}
+            placeholder="0"
+            value={quantityText}
+            onChange={(e) => setQuantityText(e.target.value)} />
+          {canBox && (
+            <NativeSelect name="qtyUnit" aria-label="수량 단위" value={qtyUnit} onChange={(e) => setQtyUnit(e.target.value as "BASE" | "BOX")} className="w-24 shrink-0">
+              <option value="BASE">{selected.baseUnit}</option>
+              <option value="BOX">박스</option>
+            </NativeSelect>
+          )}
+        </div>
+        {useBox && selected && qtyNum > 0 && (
+          <p className="mt-1 text-xs text-gray-500">
+            = {(qtyNum * selected.boxQty).toLocaleString()} {selected.baseUnit} (1박스 = {selected.boxQty.toLocaleString()}{selected.baseUnit})
+          </p>
+        )}
         {err.quantity && <span className="mt-1 block text-xs text-red-600">{err.quantity}</span>}
-      </label>
+      </div>
       {/* 직원은 단가를 입력하지 않음 (관리자가 확정할 때 입력, 서버에서도 무시) */}
       {showPrice && (
         <label className="text-sm">
@@ -153,8 +219,8 @@ export default function InboundForm({
       )}
       <label className={`text-sm ${showPrice ? "" : "col-span-2"}`}>
         공급처 (선택)
-        <Input name="supplier" maxLength={100} className={input} placeholder="예: 한빛식자재" />
-        {err.supplier && <span className="mt-1 block text-xs text-red-600">{err.supplier}</span>}
+        <PartnerSelect options={suppliers} label="공급처" />
+        {err.partnerId && <span className="mt-1 block text-xs text-red-600">{err.partnerId}</span>}
       </label>
       <label className="text-sm">
         입고일시 (비우면 현재 시각)

@@ -2,14 +2,17 @@
 
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import { revalidatePath } from "next/cache";
-import { UUID_RE } from "@/lib/form";
+import { UUID_RE, isBoxQtyUnit } from "@/lib/form";
 import { dbToDateOnly } from "@/lib/datetime";
 import { listProductBalances } from "@/modules/stock/queries";
+import { convertBoxesToBase, normalizeProductKeyword } from "@/modules/product/service";
+import { can } from "@/modules/user/codes";
 import {
   parseOutboundConfirmForm,
   parseOutboundForm,
   parseOutboundUpdateForm,
   parseOutboundVoidForm,
+  OUTBOUND_LIMITS,
   type OutboundFieldErrors,
   type OutboundUpdateFieldErrors,
 } from "./validation";
@@ -21,6 +24,7 @@ import {
   updateOutbound,
   findSimilarOutbound,
   OutboundError,
+  searchProductsForOutbound,
 } from "./service";
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", {
@@ -58,26 +62,36 @@ export async function createOutboundAction(
     return { status: "error", message: "입력값을 확인하세요.", errors: parsed.errors, ts: Date.now() };
   }
 
-  if (!parsed.data.confirmDuplicate) {
-    const similar = await findSimilarOutbound(parsed.data);
+  // 박스 단위 입력이면 서버에서 박스당 입수를 곱해 기본단위로 환산
+  const d = { ...parsed.data };
+  let boxNote = "";
+  if (isBoxQtyUnit(formData)) {
+    const conv = await convertBoxesToBase(d.productId, d.quantity, OUTBOUND_LIMITS.maxQuantity, "출고");
+    if (!conv.ok) return { status: "error", message: conv.message, errors: { quantity: conv.message }, ts: Date.now() };
+    boxNote = ` (${d.quantity.toLocaleString()}박스 × ${conv.boxQty.toLocaleString()}${conv.unit})`;
+    d.quantity = conv.quantity;
+  }
+
+  if (!d.confirmDuplicate) {
+    const similar = await findSimilarOutbound(d);
     if (similar) {
       return {
         status: "confirm",
-        message: `${timeFmt.format(similar.createdAt)}에 같은 출고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.customer ? ` → ${similar.customer}` : ""}. 중복이 아니면 [그래도 등록]을 누르세요.`,
+        message: `${timeFmt.format(similar.createdAt)}에 같은 출고가 이미 등록되었습니다: ${similar.product.name} ${similar.quantity.toLocaleString()}개${similar.partner ? ` → ${similar.partner.name}` : ""}. 중복이 아니면 [그래도 등록]을 누르세요.`,
         ts: Date.now(),
       };
     }
   }
 
   try {
-    const r = await createOutbound(parsed.data, actor);
+    const r = await createOutbound(d, actor);
     revalidateStockPages();
     return {
       status: "success",
       message:
         r.afterStock === null
-          ? `${r.productName} ${parsed.data.quantity.toLocaleString()}개 출고 등록 — 관리자가 확정하면 재고에서 차감됩니다.`
-          : `${r.productName} ${parsed.data.quantity.toLocaleString()}개 출고 완료 (현재고 ${r.afterStock.toLocaleString()})`,
+          ? `${r.productName} ${d.quantity.toLocaleString()}개${boxNote} 출고 등록 — 관리자가 확정하면 재고에서 차감됩니다.`
+          : `${r.productName} ${d.quantity.toLocaleString()}개${boxNote} 출고 완료 (현재고 ${r.afterStock.toLocaleString()})`,
       ts: Date.now(),
     };
   } catch (e) {
@@ -99,7 +113,7 @@ export type OutboundUpdateActionState = {
 const FIELD_LABELS: Record<string, string> = {
   quantity: "수량",
   unitPrice: "출고단가",
-  customer: "출고처",
+  partnerId: "출고처",
   memo: "비고",
   shippedAt: "출고일시",
 };
@@ -151,6 +165,15 @@ export async function getPickOptionsAction(productId: string): Promise<PickOptio
       quantity: b.quantity,
     };
   });
+}
+
+/** 출고 화면 상품 선택용 서버 검색 (코드·품명·분류, 최대 20개). 판매가는 금액 권한이 있을 때만 */
+export async function searchOutboundProductsAction(keyword: string) {
+  const actor = await authorize("outbound.create");
+  if (!actor) return null;
+  const r = await searchProductsForOutbound(normalizeProductKeyword(keyword));
+  const showPrice = can(actor.role, "price.view");
+  return { total: r.total, rows: r.rows.map((p) => ({ ...p, price: showPrice ? p.price : null })) };
 }
 
 export type OutboundReviewState = { status: "idle" | "success" | "error"; message: string; ts?: number };

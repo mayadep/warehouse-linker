@@ -8,16 +8,19 @@ import {
 import type { InboundRow } from "./InboundTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PartnerSelect, { type PartnerOption } from "@/components/PartnerSelect";
 const initialState: InboundUpdateActionState = { status: "idle", message: "" };
 const input = "w-full";
 const errText = "mt-1 block text-xs text-red-600";
 
 export default function InboundEditDialog({
   row,
+  suppliers,
   onClose,
   onSaved,
 }: {
   row: InboundRow;
+  suppliers: PartnerOption[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -123,8 +126,13 @@ export default function InboundEditDialog({
         <div className="flex gap-4">
           <label className="flex-1 text-sm">
             공급처
-            <Input name="supplier" maxLength={100} className={input} defaultValue={row.supplier ?? ""} />
-            {err.supplier && <span className={errText}>{err.supplier}</span>}
+            <PartnerSelect
+              options={suppliers}
+              label="공급처"
+              defaultValue={row.partnerId ?? ""}
+              current={row.partnerId ? { id: row.partnerId, name: row.supplier ?? "" } : null}
+            />
+            {err.partnerId && <span className={errText}>{err.partnerId}</span>}
           </label>
           <label className="flex-1 text-sm">
             입고일시

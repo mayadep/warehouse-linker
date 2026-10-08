@@ -26,7 +26,7 @@ function toOption(o: OB): OutboundOption {
   return {
     id: o.id,
     shippedAtText: dtFmt.format(o.shippedAt),
-    customer: o.customer,
+    customer: o.partner?.name ?? null,
     sku: o.product.sku,
     name: o.product.name,
     quantity: o.quantity,

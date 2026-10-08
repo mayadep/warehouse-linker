@@ -3,11 +3,11 @@ import Forbidden from "@/components/Forbidden";
 import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import {
-  listProductsForOutbound,
-  listRecentCustomers,
+  searchProductsForOutbound,
   listRecentOutbounds,
 } from "@/modules/outbound/service";
 import { dbToDateOnly, toKstDateTimeLocal } from "@/lib/datetime";
+import { listPartnerOptions } from "@/modules/partner/service";
 import OutboundForm from "./OutboundForm";
 import OutboundTable, { type OutboundRow } from "./OutboundTable";
 
@@ -49,13 +49,14 @@ function describeChanges(before: unknown, after: unknown, showPrice: boolean): s
 export default async function OutboundPage() {
   await connection(); // 항상 요청 시점의 DB 데이터를 조회
   const user = await requirePageUser();
-  if (!can(user.role, "outbound.create")) return <Forbidden title="출고" />;
+  if (!can(user.role, "outbound.view")) return <Forbidden title="출고" />;
   const showPrice = can(user.role, "price.view");
+  const canCreate = can(user.role, "outbound.create");
   const canManage = can(user.role, "outbound.manage");
 
-  const [productRows, customers, recent] = await Promise.all([
-    listProductsForOutbound(),
-    listRecentCustomers(),
+  const [{ rows: productRows, total: productTotal }, customers, recent] = await Promise.all([
+    canCreate ? searchProductsForOutbound() : Promise.resolve({ rows: [], total: 0 }),
+    listPartnerOptions("CUSTOMER"),
     listRecentOutbounds(20),
   ]);
   // 직원에게는 판매가(출고단가 기본값)를 내려주지 않음
@@ -82,7 +83,8 @@ export default async function OutboundPage() {
     createdByName: r.createdBy?.name ?? null,
     cancelReason: r.cancelReason,
     dispatchNo: r.dispatchItem?.dispatch.dispatchNo ?? null,
-    customer: r.customer,
+    partnerId: r.partnerId,
+    customer: r.partner?.name ?? null,
     memo: r.memo,
     shippedAtText: dateFmt.format(r.shippedAt),
     shippedAtInput: toKstDateTimeLocal(r.shippedAt),
@@ -106,20 +108,20 @@ export default async function OutboundPage() {
     <div>
       <h2 className="mb-6 text-2xl font-semibold tracking-tight">출고</h2>
 
-      {products.length === 0 ? (
+      {!canCreate ? null : productTotal === 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 p-4 text-sm">
           DB에 등록된 상품이 없습니다. 상품등록 화면에서 상품을 먼저 등록하세요.
         </p>
       ) : (
-        <OutboundForm products={products} customers={customers} showPrice={showPrice} />
+        <OutboundForm products={products} productTotal={productTotal} customers={customers} showPrice={showPrice} />
       )}
-      {!canManage && (
+      {canCreate && !canManage && (
         <p className="mt-2 text-xs text-muted-foreground">
           등록한 출고는 관리자가 확정하면 재고에서 차감됩니다.
         </p>
       )}
 
-      <OutboundTable rows={rows} canManage={canManage} showPrice={showPrice} />
+      <OutboundTable rows={rows} customers={customers} canManage={canManage} showPrice={showPrice} />
     </div>
   );
 }

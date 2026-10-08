@@ -245,6 +245,7 @@ export type BalanceEntry = {
   locationId: string | null;
   locationCode: string | null;
   expiryDate: string | null;
+  lotDate: string | null; // 그 칸에서 가장 오래된 입고일 (null = 미상)
   quantity: number;
 };
 
@@ -283,6 +284,7 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
       locationId: b.locationId,
       locationCode: b.location?.code ?? null,
       expiryDate: b.expiryDate ? dbToDateOnly(b.expiryDate) : null,
+      lotDate: b.lotDate ? dbToDateOnly(b.lotDate) : null,
       quantity: b.quantity,
     })),
     locationHistory: locHist.map((h) => ({
@@ -308,7 +310,7 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
         afterStock: m.afterStock,
         locationCode: m.location?.code ?? null,
         expiryDate: m.expiryDate ? dbToDateOnly(m.expiryDate) : null,
-        partner: m.inbound?.supplier ?? m.outbound?.customer ?? null,
+        partner: m.inbound?.partner?.name ?? m.outbound?.partner?.name ?? null,
         note:
           m.type === "INBOUND_CANCEL" || m.type === "OUTBOUND_CANCEL"
             ? (m.inbound?.cancelReason ?? m.outbound?.cancelReason ?? null)

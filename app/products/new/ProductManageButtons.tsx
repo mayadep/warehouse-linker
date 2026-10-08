@@ -11,6 +11,8 @@ import { productVersion } from "@/modules/product/validation";
 import Modal from "@/components/Modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { STORAGE_TEMPS, STORAGE_TEMP_LABELS, type StorageTempCode } from "@/modules/product/storage";
 
 const initialReview: ProductReviewState = { status: "idle", message: "" };
 const initialUpdate: ProductUpdateState = { status: "idle", message: "" };
@@ -20,6 +22,7 @@ export type ManageProduct = {
   sku: string;
   name: string;
   category: string;
+  storageTemp: StorageTempCode;
   price: number;
   baseUnit: string;
   boxQty: number;
@@ -101,6 +104,17 @@ function EditDialog({
           분류 <span className="text-red-600">*</span>
           <Input name="category" defaultValue={product.category} maxLength={50} className="w-full" />
           {err.category && <span className="mt-1 block text-xs text-red-600">{err.category}</span>}
+        </label>
+        <label className="text-sm">
+          보관 온도 <span className="text-red-600">*</span>
+          <NativeSelect name="storageTemp" defaultValue={product.storageTemp} className="w-full">
+            {STORAGE_TEMPS.map((t) => (
+              <option key={t} value={t}>
+                {STORAGE_TEMP_LABELS[t]}
+              </option>
+            ))}
+          </NativeSelect>
+          {err.storageTemp && <span className="mt-1 block text-xs text-red-600">{err.storageTemp}</span>}
         </label>
         {canPrice ? (
           <label className="text-sm">

@@ -1,9 +1,9 @@
 // 상품 등록 입력값 검증 (서버에서 반드시 실행)
 import { DEFAULT_SAFETY_STOCK } from "./defaults";
 import { isProductUnit, type ProductUnitCode } from "./units";
+import { isStorageTemp, type StorageTempCode } from "./storage";
 
 export const PRODUCT_LIMITS = {
-  maxSkuLength: 30,
   maxNameLength: 100,
   maxCategoryLength: 50,
   maxPrice: 100_000_000,
@@ -11,12 +11,13 @@ export const PRODUCT_LIMITS = {
   maxSafetyStock: 1_000_000,
 } as const;
 
+// 품목코드는 서버가 자동 채번한다 (입력받지 않음)
 export type ProductInput = {
-  sku: string;
   name: string;
   category: string;
   price: number;
   baseUnit: ProductUnitCode;
+  storageTemp: StorageTempCode;
   boxQty: number;
   safetyStock: number;
   trackExpiry: boolean;
@@ -29,8 +30,6 @@ export type ProductParseResult =
   | { ok: true; data: ProductInput }
   | { ok: false; errors: ProductFieldErrors };
 
-// 영문 대문자/숫자로 시작, 이후 대문자·숫자·하이픈
-const SKU_RE = /^[A-Z0-9][A-Z0-9-]*$/;
 const INT_RE = /^\d+$/;
 
 function text(fd: FormData, key: string): string {
@@ -69,13 +68,6 @@ export function parseProductRejectForm(
 export function parseProductForm(fd: FormData): ProductParseResult {
   const errors: ProductFieldErrors = {};
 
-  const sku = text(fd, "sku").toUpperCase();
-  if (!sku) errors.sku = "품목코드를 입력하세요.";
-  else if (sku.length > PRODUCT_LIMITS.maxSkuLength)
-    errors.sku = `품목코드는 ${PRODUCT_LIMITS.maxSkuLength}자 이내로 입력하세요.`;
-  else if (!SKU_RE.test(sku))
-    errors.sku = "품목코드는 영문·숫자·하이픈(-)만 사용할 수 있습니다.";
-
   const name = text(fd, "name");
   if (!name) errors.name = "품명을 입력하세요.";
   else if (name.length > PRODUCT_LIMITS.maxNameLength)
@@ -100,6 +92,11 @@ export function parseProductForm(fd: FormData): ProductParseResult {
   let baseUnit: ProductUnitCode = "EA";
   if (!isProductUnit(unitRaw)) errors.baseUnit = "기본단위를 선택하세요.";
   else baseUnit = unitRaw;
+
+  const tempRaw = text(fd, "storageTemp");
+  let storageTemp: StorageTempCode = "AMBIENT";
+  if (!isStorageTemp(tempRaw)) errors.storageTemp = "보관 온도를 선택하세요.";
+  else storageTemp = tempRaw;
 
   // BOX 단위 상품은 입수 1 고정 (화면의 비활성 입력값은 전송되지 않으므로 서버에서 강제)
   let boxQty = 1;
@@ -129,15 +126,15 @@ export function parseProductForm(fd: FormData): ProductParseResult {
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
-    data: { sku, name, category, price, baseUnit, boxQty, safetyStock, trackExpiry },
+    data: { name, category, price, baseUnit, storageTemp, boxQty, safetyStock, trackExpiry },
   };
 }
 
 /**
  * 수정 화면이 열린 시점의 값 스냅샷. 재고 변동(updatedAt)과 무관하게 '수정 대상 값'이 그대로일 때만 저장되도록 한다.
  */
-export function productVersion(p: { name: string; category: string; price: number; boxQty: number; safetyStock: number; status: string }) {
-  return [p.status, p.name, p.category, p.price, p.boxQty, p.safetyStock].join("\u001f");
+export function productVersion(p: { name: string; category: string; price: number; boxQty: number; safetyStock: number; status: string; storageTemp: string }) {
+  return [p.status, p.name, p.category, p.price, p.boxQty, p.safetyStock, p.storageTemp].join("\u001f");
 }
 
 export type ProductUpdateInput = {
@@ -146,12 +143,13 @@ export type ProductUpdateInput = {
   version: string;
   name: string;
   category: string;
+  storageTemp: StorageTempCode;
   price: number;
   boxQty: number;
   safetyStock: number;
 };
 
-export type ProductUpdateFieldErrors = Partial<Record<"name" | "category" | "price" | "boxQty" | "safetyStock", string>>;
+export type ProductUpdateFieldErrors = Partial<Record<"name" | "category" | "storageTemp" | "price" | "boxQty" | "safetyStock", string>>;
 
 /**
  * 상품 수정 입력. 품목코드·기본단위·유통기한 관리는 입출고 이력의 의미가 바뀌므로 수정 대상이 아니다.
@@ -177,6 +175,11 @@ export function parseProductUpdateForm(
   if (!category) errors.category = "분류를 입력하세요.";
   else if (category.length > PRODUCT_LIMITS.maxCategoryLength)
     errors.category = `분류는 ${PRODUCT_LIMITS.maxCategoryLength}자 이내로 입력하세요.`;
+
+  const tempRaw = text(fd, "storageTemp");
+  let storageTemp: StorageTempCode = "AMBIENT";
+  if (!isStorageTemp(tempRaw)) errors.storageTemp = "보관 온도를 선택하세요.";
+  else storageTemp = tempRaw;
 
   // 판매가: 확정 대기 상품은 화면에서 입력받지 않음(서비스에서 무시)
   const priceRaw = text(fd, "price").replaceAll(",", "");
@@ -209,7 +212,7 @@ export function parseProductUpdateForm(
   else safetyStock = Number(safetyRaw);
 
   if (Object.keys(errors).length > 0) return { ok: false, message: "입력값을 확인하세요.", errors };
-  return { ok: true, data: { productId, version, name, category, price, boxQty, safetyStock }, hasBoxQty };
+  return { ok: true, data: { productId, version, name, category, storageTemp, price, boxQty, safetyStock }, hasBoxQty };
 }
 
 /** 상품 비활성화 / 다시 사용 */

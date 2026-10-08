@@ -1,3 +1,4 @@
+import "server-only";
 // 상품 기본 보관위치 랜덤 자동 배정
 import { prisma } from "@/lib/prisma";
 import { STORAGE_TYPES, STORAGE_TYPE_LABELS, type StorageTypeCode } from "./codes";
