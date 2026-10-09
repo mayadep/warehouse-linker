@@ -76,6 +76,7 @@ export const AUDIT_ACTION_LABELS = {
   SAFETY_STOCK_UPDATE: "안전재고 변경",
   STOCK_EXPIRY_CHANGE: "유통기한 변경",
   STOCK_MOVE: "재고 위치 이동",
+  STOCK_ADJUST: "재고조정",
   WAREHOUSE_CREATE: "창고 추가",
   RACK_ADD: "랙 추가",
   WAREHOUSE_ACTIVE: "창고 다시 사용",

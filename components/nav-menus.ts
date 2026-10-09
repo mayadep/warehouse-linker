@@ -32,6 +32,7 @@ export const menuGroups: MenuGroup[] = [
       { label: "공지사항", href: "/notices", perm: "admin" },
       { label: "거래처", href: "/partners", perm: "admin" },
       { label: "로그", href: "/logs", perm: "admin" },
+      { label: "재고조정", href: "/adjustments", perm: "admin" },
       { label: "사용자·권한", href: "/users", perm: "admin" },
     ],
   },

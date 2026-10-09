@@ -272,6 +272,7 @@ export async function getStockLedger(productId: string, limit = 50) {
         outbound: { select: { partner: { select: { name: true } }, shippedAt: true, memo: true, cancelReason: true } },
         inboundRevision: { select: { reason: true } },
         outboundRevision: { select: { reason: true } },
+        adjustment: { select: { reason: true, memo: true } },
         location: { select: { code: true } },
       },
     }),

@@ -1,11 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { INT_RE, UUID_RE, parseOptionalDate, text } from "@/lib/form";
+import { INT_RE, UUID_RE, parseOptionalDate, parseRequestId, text } from "@/lib/form";
 import { dbToDateOnly } from "@/lib/datetime";
 import { prisma } from "@/lib/prisma";
-import { getStockLedger } from "./queries";
-import { changeStockExpiry, moveStock, StockBucketError } from "./service";
+import { getStockLedger, listProductBalances } from "./queries";
+import {
+  BucketStockError,
+  InsufficientStockError,
+  changeStock,
+  changeStockExpiry,
+  isUniqueViolation,
+  moveStock,
+  StockBucketError,
+} from "./service";
+import { ADJUST_MEMO_MAX, ADJUST_REASONS, ADJUST_REASON_LABELS } from "./codes";
 import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { getLocationHistory } from "@/modules/warehouse/location";
 import { storageMismatchWarning } from "@/modules/warehouse/assign";
@@ -112,6 +121,143 @@ export async function changeStockExpiryAction(
 
   revalidatePath("/stock");
   return { status: "success", message: `${quantity.toLocaleString()}개의 유통기한을 ${toExpiry}(으)로 저장했습니다.`, ts: Date.now() };
+}
+
+/**
+ * 재고조정 (관리자): 폐기·파손·분실·실사 차이 등 입출고 외 재고 증감. 한 칸(위치·유통기한) 기준
+ * 폼: requestId, productId, locationId(""=미지정) 또는 locationCode(없는 칸을 새로 지정), expiryDate(""=미상),
+ *     reason, quantity(1 이상), memo(선택, 기타는 필수)
+ * 감소는 그 칸에서만 차감(모자라면 거부), 증가는 그 칸에 입고일 미상으로 추가
+ */
+export async function adjustStockAction(
+  _prev: SafetyStockActionState,
+  fd: FormData
+): Promise<SafetyStockActionState> {
+  const fail = (message: string) => ({ status: "error" as const, message, ts: Date.now() });
+  const user = await authorize("admin");
+  if (!user) return fail(NO_PERMISSION_MESSAGE);
+
+  const requestId = parseRequestId(fd);
+  if (requestId.error) return fail(requestId.error);
+  const productId = text(fd, "productId");
+  let locationId = text(fd, "locationId") || null;
+  const locationCode = text(fd, "locationCode").toUpperCase();
+  if (!UUID_RE.test(productId) || (locationId && !UUID_RE.test(locationId))) return fail("잘못된 요청입니다.");
+  if (!locationId && locationCode && !LOCATION_CODE_RE.test(locationCode))
+    return fail("위치코드 형식이 올바르지 않습니다. (예: RF1-R01-2-3)");
+  const expiry = parseOptionalDate(fd, "expiryDate", "유통기한");
+  if (expiry.error) return fail("잘못된 요청입니다.");
+  const reason = ADJUST_REASONS.find((r) => r.value === text(fd, "reason"));
+  if (!reason) return fail("조정 사유를 선택하세요.");
+  const rawQty = text(fd, "quantity").replaceAll(",", "");
+  if (!INT_RE.test(rawQty) || Number(rawQty) < 1) return fail("수량은 1 이상의 정수여야 합니다.");
+  const quantity = Number(rawQty);
+  if (quantity > MAX_SAFETY_STOCK) return fail("수량이 너무 큽니다.");
+  const memo = text(fd, "memo").trim();
+  if (memo.length > ADJUST_MEMO_MAX) return fail(`메모는 ${ADJUST_MEMO_MAX}자 이하여야 합니다.`);
+  if ((reason.value === "OTHER_MINUS" || reason.value === "OTHER_PLUS") && !memo)
+    return fail("기타 사유는 메모를 입력하세요.");
+  const delta = reason.sign * quantity;
+
+  try {
+    const duplicated = await prisma.$transaction(async (tx) => {
+      if (await tx.stockAdjustment.findUnique({ where: { requestId: requestId.value }, select: { id: true } }))
+        return true;
+      if (!locationId && locationCode) {
+        const to = await tx.location.findUnique({ where: { code: locationCode }, select: { id: true } });
+        if (!to) throw new StockBucketError(`존재하지 않는 위치코드입니다: ${locationCode}`);
+        const inactive = delta > 0 ? await inactiveLocationMessage(tx, to.id) : null;
+        if (inactive) throw new StockBucketError(inactive);
+        locationId = to.id;
+      }
+      const header = await tx.stockAdjustment.create({
+        data: {
+          requestId: requestId.value,
+          productId,
+          reason: reason.value,
+          quantity: delta,
+          memo: memo || null,
+          createdById: user.id,
+        },
+      });
+      const r = await changeStock(tx, {
+        productId,
+        delta,
+        type: "ADJUST",
+        adjustmentId: header.id,
+        bucket: { locationId, expiryDate: expiry.value },
+        strict: delta < 0,
+      });
+      const loc = locationId
+        ? await tx.location.findUnique({ where: { id: locationId }, select: { code: true } })
+        : null;
+      const where = loc?.code ?? "미지정 위치";
+      await recordAudit(tx, {
+        category: "STOCK",
+        action: "STOCK_ADJUST",
+        targetId: productId,
+        targetLabel: r.productName,
+        summary: `${r.productName} ${where} ${ADJUST_REASON_LABELS[reason.value]} ${delta > 0 ? "+" : "-"}${quantity.toLocaleString()}개`,
+        detail: {
+          reason: ADJUST_REASON_LABELS[reason.value],
+          quantity: delta,
+          location: where,
+          expiryDate: expiry.value ?? "미상",
+          memo: memo || null,
+          after: { stock: r.afterStock },
+        },
+      });
+      return false;
+    });
+    if (duplicated) {
+      revalidatePath("/stock");
+      return { status: "success", message: "이미 처리된 요청입니다.", ts: Date.now() };
+    }
+  } catch (e) {
+    if (isUniqueViolation(e, "requestId")) return { status: "success", message: "이미 처리된 요청입니다.", ts: Date.now() };
+    if (e instanceof StockBucketError || e instanceof BucketStockError || e instanceof InsufficientStockError)
+      return fail(e.message);
+    console.error("[stock] adjust failed", e);
+    return fail("처리 중 오류가 발생했습니다. 다시 시도하세요.");
+  }
+
+  revalidatePath("/stock");
+  return {
+    status: "success",
+    message: `${ADJUST_REASON_LABELS[reason.value]}: ${quantity.toLocaleString()}개를 ${reason.sign > 0 ? "추가" : "차감"}했습니다.`,
+    ts: Date.now(),
+  };
+}
+
+/** 재고조정 화면: 상품 검색 (확정된 상품만, 최대 10건) */
+export type AdjustProductOption = { id: string; sku: string; name: string; baseUnit: string; stock: number };
+
+export async function searchAdjustProductsAction(q: string): Promise<AdjustProductOption[]> {
+  if (!(await authorize("admin"))) return [];
+  const term = typeof q === "string" ? q.trim().slice(0, 50) : "";
+  if (!term) return [];
+  return prisma.product.findMany({
+    where: {
+      status: "ACTIVE",
+      OR: [{ sku: { contains: term, mode: "insensitive" } }, { name: { contains: term, mode: "insensitive" } }],
+    },
+    orderBy: { sku: "asc" },
+    take: 10,
+    select: { id: true, sku: true, name: true, baseUnit: true, stock: true },
+  });
+}
+
+/** 재고조정 화면: 상품의 칸별 재고 (위치·유통기한 단위) */
+export async function listAdjustBucketsAction(productId: string): Promise<BalanceEntry[]> {
+  if (!(await authorize("admin")) || typeof productId !== "string" || !UUID_RE.test(productId)) return [];
+  const rows = await listProductBalances(productId);
+  return rows.map((b) => ({
+    locationId: b.locationId,
+    locationCode: b.location?.code ?? null,
+    expiryDate: b.expiryDate ? dbToDateOnly(b.expiryDate) : null,
+    lotDate: b.lotDate ? dbToDateOnly(b.lotDate) : null,
+    quantity: b.quantity,
+  }));
 }
 
 export type MoveStockActionState = {
@@ -312,7 +458,9 @@ export async function getStockLedgerAction(productId: string): Promise<LedgerRes
         expiryDate: m.expiryDate ? dbToDateOnly(m.expiryDate) : null,
         partner: m.inbound?.partner?.name ?? m.outbound?.partner?.name ?? null,
         note:
-          m.type === "INBOUND_CANCEL" || m.type === "OUTBOUND_CANCEL"
+          m.adjustment
+            ? `${ADJUST_REASON_LABELS[m.adjustment.reason]}${m.adjustment.memo ? ` · ${m.adjustment.memo}` : ""}`
+            : m.type === "INBOUND_CANCEL" || m.type === "OUTBOUND_CANCEL"
             ? (m.inbound?.cancelReason ?? m.outbound?.cancelReason ?? null)
             : isCorrection
               ? reason

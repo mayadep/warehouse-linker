@@ -244,6 +244,8 @@ export async function changeStock(
     type: StockMovementType;
     inboundId?: string;
     outboundId?: string;
+    /** 재고조정(ADJUST) 헤더 */
+    adjustmentId?: string;
     bucket?: StockBucket;
     /** 줄일 때 bucket 칸에서만 (모자라면 BucketStockError). 출고 위치 지정용 */
     strict?: boolean;
@@ -291,6 +293,7 @@ export async function changeStock(
           afterStock: running + step.quantity,
           inboundId: args.inboundId,
           outboundId: args.outboundId,
+          adjustmentId: args.adjustmentId,
           locationId: step.bucket.locationId,
           expiryDate: step.bucket.expiryDate ? dateOnlyToDb(step.bucket.expiryDate) : null,
           lotDate: step.lotDate ? dateOnlyToDb(step.lotDate) : null,
