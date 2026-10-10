@@ -12,6 +12,7 @@ export default defineConfig({
   },
   engine: "classic",
   datasource: {
-    url: env("DATABASE_URL"),
+    // 마이그레이션 등 CLI는 Neon 직접 연결(풀러 미경유) 주소를 사용
+    url: env("DATABASE_URL_UNPOOLED"),
   },
 });
