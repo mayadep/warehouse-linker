@@ -52,7 +52,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex items-center justify-between gap-4 mobile:flex-wrap">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">{ORDER_TYPE_LABELS[type]}</h2>
           <p className="mt-1 text-sm text-muted-foreground">

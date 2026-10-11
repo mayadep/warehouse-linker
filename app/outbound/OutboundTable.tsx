@@ -104,7 +104,7 @@ export default function OutboundTable({
 
   return (
     <div>
-      <div className="mt-10 mb-2 flex items-center justify-between gap-4">
+      <div className="mt-10 mb-2 flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-gray-500">
           출고 내역 {rows.length}건
           {pendingCount > 0 && <span className="ml-1 font-medium text-amber-700">(확정 대기 {pendingCount}건)</span>}

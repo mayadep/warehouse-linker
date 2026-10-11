@@ -50,7 +50,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               alertCount={alertCount}
               expiryAlert={expiryAlert}
             />
-            <main className="flex-1 p-6">
+            <main className="flex-1 p-6 mobile:p-4">
               <div className="max-w-[1440px]">{children}</div>
             </main>
           </div>

@@ -57,7 +57,7 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
       <Link href="/warehouses" className="text-sm text-gray-500 hover:underline">
         ‹ 창고 목록
       </Link>
-      <div className="mt-2 mb-6 flex items-center justify-between gap-4">
+      <div className="mt-2 mb-6 flex items-center justify-between gap-4 mobile:flex-wrap">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-2xl font-semibold tracking-tight">{wh.name}</h2>

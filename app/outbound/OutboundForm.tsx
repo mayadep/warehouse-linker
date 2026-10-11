@@ -136,7 +136,7 @@ export default function OutboundForm({
     <form
       ref={formRef}
       onSubmit={onSubmit}
-      className="grid grid-cols-4 gap-x-4 gap-y-3 rounded-lg border bg-card p-4"
+      className="grid grid-cols-4 gap-x-4 gap-y-3 mobile:grid-cols-2 rounded-lg border bg-card p-4"
       noValidate
     >
       <label className="col-span-2 text-sm">
@@ -242,13 +242,13 @@ export default function OutboundForm({
         {err.shippedAt && <span className={errText}>{err.shippedAt}</span>}
       </label>
 
-      <label className="col-span-4 text-sm">
+      <label className="col-span-4 mobile:col-span-full text-sm">
         출고 위치
         <PickSelect key={productId} productId={productId} quantity={qty} baseUnit={selected?.baseUnit} />
         {err.pick && <span className={errText}>{err.pick}</span>}
       </label>
 
-      <label className="col-span-3 text-sm">
+      <label className="col-span-3 mobile:col-span-full text-sm">
         비고 (선택)
         <Input name="memo" maxLength={500} className={input} />
         {err.memo && <span className={errText}>{err.memo}</span>}
@@ -262,7 +262,7 @@ export default function OutboundForm({
       {state.status === "confirm" ? (
         <div
           aria-live="polite"
-          className="col-span-4 flex items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className="col-span-4 mobile:col-span-full flex items-center justify-between gap-4 rounded-[6px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
           <p>{state.message}</p>
           <button
@@ -278,7 +278,7 @@ export default function OutboundForm({
         state.message && (
           <p
             aria-live="polite"
-            className={`col-span-4 text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
+            className={`col-span-4 mobile:col-span-full text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
           >
             {state.message}
           </p>

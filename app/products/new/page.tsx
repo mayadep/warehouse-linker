@@ -69,7 +69,7 @@ export default async function NewProductPage({
         </p>
       )}
 
-      <div className="mt-10 mb-2 flex items-center justify-between gap-4">
+      <div className="mt-10 mb-2 flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-gray-500">
           {keyword ? `"${keyword}" 검색 결과` : "등록된 상품"} {total.toLocaleString()}개
           {total > 0 && ` · ${((page - 1) * PRODUCT_PAGE_SIZE + 1).toLocaleString()}–${Math.min(page * PRODUCT_PAGE_SIZE, total).toLocaleString()} 표시`}

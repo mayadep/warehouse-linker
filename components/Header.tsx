@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BellIcon, CalendarClockIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, KeyRoundIcon, LogOutIcon, SearchIcon, UserIcon } from "lucide-react";
+import { BellIcon, CalendarClockIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, KeyRoundIcon, LogOutIcon, MenuIcon, SearchIcon, UserIcon } from "lucide-react";
 import { findMenu } from "./nav-menus";
 import PasswordChangeModal from "./PasswordChangeModal";
+import { SIDEBAR_TOGGLE_EVENT } from "./Sidebar";
 import { formatKstNow } from "@/lib/datetime";
 import { logoutAction } from "@/modules/user/actions";
 import { USER_ROLE_LABELS, type UserRoleCode } from "@/modules/user/codes";
@@ -42,22 +43,30 @@ export default function Header({
   }, []);
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b bg-card px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b bg-card px-6 mobile:gap-2 mobile:px-4">
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event(SIDEBAR_TOGGLE_EVENT))}
+        aria-label="메뉴 열기"
+        className="-ml-1 hidden size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 ease-out hover:bg-muted hover:text-foreground mobile:flex"
+      >
+        <MenuIcon className="size-5" strokeWidth={1.8} />
+      </button>
       {current && (
-        <nav aria-label="현재 위치" className="flex shrink-0 items-center gap-1.5 text-sm">
+        <nav aria-label="현재 위치" className="flex shrink-0 items-center mobile:min-w-0 mobile:shrink gap-1.5 text-sm">
           {current.group && (
             <>
-              <span className="text-muted-foreground">{current.group}</span>
-              <ChevronRightIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              <span className="text-muted-foreground mobile:max-sm:hidden">{current.group}</span>
+              <ChevronRightIcon className="size-3.5 text-muted-foreground mobile:max-sm:hidden" aria-hidden="true" />
             </>
           )}
-          <span className="font-medium">{current.menu.label}</span>
+          <span className="font-medium mobile:truncate">{current.menu.label}</span>
         </nav>
       )}
 
       <div className="flex min-w-0 flex-1 justify-center">
         {canViewStock && (
-          <form action="/stock" method="get" role="search" className="relative w-full max-w-xl">
+          <form action="/stock" method="get" role="search" className="relative w-full max-w-xl mobile:max-md:hidden">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <input
               type="search"
@@ -71,7 +80,7 @@ export default function Header({
         )}
       </div>
 
-      <p className="flex shrink-0 items-center gap-1.5 rounded-lg border border-input px-3 py-2 text-sm text-foreground tabular-nums">
+      <p className="flex shrink-0 items-center gap-1.5 rounded-lg mobile:hidden border border-input px-3 py-2 text-sm text-foreground tabular-nums">
         <CalendarIcon className="size-4 text-muted-foreground" aria-hidden="true" />
         <span suppressHydrationWarning>{now}</span>
       </p>
@@ -115,8 +124,8 @@ export default function Header({
           <span className="flex size-7 items-center justify-center rounded-lg bg-secondary text-primary">
             <UserIcon className="size-4" strokeWidth={1.8} aria-hidden="true" />
           </span>
-          <span className="max-w-28 truncate font-medium">{user.name}</span>
-          <Badge variant={user.role === "ADMIN" ? "indigo" : "gray"}>{USER_ROLE_LABELS[user.role]}</Badge>
+          <span className="max-w-28 truncate font-medium mobile:max-sm:hidden">{user.name}</span>
+          <Badge className="mobile:max-sm:hidden" variant={user.role === "ADMIN" ? "indigo" : "gray"}>{USER_ROLE_LABELS[user.role]}</Badge>
           <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-popover p-1 shadow-elevated">

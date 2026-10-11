@@ -25,7 +25,7 @@ export default async function WarehousesPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex items-center justify-between gap-4 mobile:flex-wrap">
         <h2 className="text-2xl font-semibold tracking-tight">창고관리</h2>
         <WarehouseCreateButton suggestions={suggestions} />
       </div>

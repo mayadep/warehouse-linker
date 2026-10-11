@@ -48,7 +48,7 @@ export default function ProductForm({ categories, showPrice }: { categories: str
     <form
       ref={formRef}
       onSubmit={onSubmit}
-      className="grid grid-cols-4 gap-x-4 gap-y-3 rounded-lg border bg-card p-4"
+      className="grid grid-cols-4 gap-x-4 gap-y-3 mobile:grid-cols-2 rounded-lg border bg-card p-4"
       noValidate
     >
       <label className="text-sm">
@@ -130,11 +130,11 @@ export default function ProductForm({ categories, showPrice }: { categories: str
         {err.safetyStock && <span className={errText}>{err.safetyStock}</span>}
       </label>
 
-      <p className="col-span-4 text-xs text-muted-foreground">
+      <p className="col-span-4 mobile:col-span-full text-xs text-muted-foreground">
         안전재고: 현재고가 이 값 이하이면 재고현황에서 &quot;부족&quot;으로 표시됩니다. (0 = 사용 안 함, 비우면 {DEFAULT_SAFETY_STOCK})
       </p>
 
-      <label className="col-span-3 flex items-center gap-2 text-sm">
+      <label className="col-span-3 mobile:col-span-full flex items-center gap-2 text-sm">
         <input type="checkbox" name="trackExpiry" defaultChecked />
         유통기한 관리
       </label>
@@ -147,7 +147,7 @@ export default function ProductForm({ categories, showPrice }: { categories: str
       {state.message && (
         <p
           aria-live="polite"
-          className={`col-span-4 text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
+          className={`col-span-4 mobile:col-span-full text-sm ${state.status === "success" ? "text-green-700" : "text-red-600"}`}
         >
           {state.message}
         </p>

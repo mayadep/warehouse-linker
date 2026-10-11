@@ -159,7 +159,7 @@ function ProcessForm({
                 <li key={i}>{w}</li>
               ))}
             </ul>
-            <div className="mt-2 flex items-center justify-between gap-4">
+            <div className="mt-2 flex items-center justify-between gap-4 mobile:flex-wrap">
               <p>{state.message}</p>
               <button
                 name="confirmedLocationCodes"

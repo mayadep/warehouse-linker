@@ -37,7 +37,7 @@ export default function NoticeManager({ notices }: { notices: NoticeRow[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-muted-foreground">
           공지 <b className="font-semibold text-foreground">{notices.length}</b>건
         </p>

@@ -41,7 +41,7 @@ export default function UserManager({ users, currentUserId }: { users: UserRow[]
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-muted-foreground">
           사용자 <b className="font-semibold text-foreground">{users.length}</b>명
         </p>

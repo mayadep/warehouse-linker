@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <div role="status" aria-label="불러오는 중">
       <Skeleton className="h-4 w-24" />
-      <div className="mt-2 mb-5 flex items-center justify-between gap-4">
+      <div className="mt-2 mb-5 flex items-center justify-between gap-4 mobile:flex-wrap">
         <Skeleton className="h-7 w-64" />
         <Skeleton className="h-9 w-28" />
       </div>

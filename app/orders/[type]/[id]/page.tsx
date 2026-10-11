@@ -63,7 +63,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ ty
         <ChevronLeftIcon className="size-4" />
         {ORDER_TYPE_LABELS[type]} 목록
       </Link>
-      <div className="mt-2 mb-5 flex items-center justify-between gap-4">
+      <div className="mt-2 mb-5 flex items-center justify-between gap-4 mobile:flex-wrap">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">
             {ORDER_TYPE_LABELS[type]} <span className="font-mono">{o.orderNo}</span>

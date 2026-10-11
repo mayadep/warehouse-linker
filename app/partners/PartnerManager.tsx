@@ -41,7 +41,7 @@ export default function PartnerManager({ partners }: { partners: PartnerRow[] })
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-muted-foreground">
           거래처 <b className="font-semibold text-foreground">{partners.length}</b>곳
         </p>
