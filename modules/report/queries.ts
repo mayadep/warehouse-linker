@@ -13,7 +13,7 @@ const SRC = {
   outbound: { table: Prisma.raw('"Outbound"'), at: Prisma.raw('t."shippedAt"'), price: Prisma.raw('t."unitPrice"') },
 } as const;
 
-export type ReportRow = {
+type ReportRow = {
   key: string;
   code: string | null; // 상품별일 때 상품 코드
   label: string; // 일자 / 상품명 / 거래처명

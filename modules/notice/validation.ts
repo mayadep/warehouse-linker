@@ -5,7 +5,7 @@ import { NOTICE_LIMITS } from "./codes";
 export type NoticeFieldErrors = Partial<Record<"title" | "body" | "noticeId", string>>;
 type Result<T> = { ok: true; data: T } | { ok: false; errors: NoticeFieldErrors; message?: string };
 
-export type NoticeInput = { title: string; body: string; isPinned: boolean; isPublished: boolean };
+type NoticeInput = { title: string; body: string; isPinned: boolean; isPublished: boolean };
 
 function parseCommon(fd: FormData): { data: NoticeInput; errors: NoticeFieldErrors } {
   const errors: NoticeFieldErrors = {};

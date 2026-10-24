@@ -5,7 +5,7 @@ import { can, type Permission, type UserRoleCode } from "@/modules/user/codes";
 export type Menu = { label: string; href: string; dev?: boolean; perm?: Permission };
 export type MenuGroup = { title?: string; menus: Menu[] };
 
-export const menuGroups: MenuGroup[] = [
+const menuGroups: MenuGroup[] = [
   { menus: [{ label: "대시보드", href: "/" }] },
   {
     title: "재고",

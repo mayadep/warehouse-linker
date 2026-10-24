@@ -23,7 +23,7 @@ export const OUTBOUND_LIMITS = {
   maxReasonLength: 200,
 } as const;
 
-export type OutboundInput = {
+type OutboundInput = {
   productId: string;
   quantity: number;
   unitPrice: number | null;
@@ -39,7 +39,7 @@ export type OutboundCreateInput = OutboundInput & {
   requestId: string;
   confirmDuplicate: boolean;
 };
-export type OutboundField = keyof OutboundCreateInput;
+type OutboundField = keyof OutboundCreateInput;
 export type OutboundFieldErrors = Partial<Record<OutboundField, string>>;
 export type OutboundParseResult =
   | { ok: true; data: OutboundCreateInput }
@@ -51,7 +51,7 @@ export type OutboundUpdateInput = Omit<OutboundInput, "productId"> & {
   version: number;
   reason: string;
 };
-export type OutboundUpdateField = keyof OutboundUpdateInput;
+type OutboundUpdateField = keyof OutboundUpdateInput;
 export type OutboundUpdateFieldErrors = Partial<Record<OutboundUpdateField, string>>;
 export type OutboundUpdateParseResult =
   | { ok: true; data: OutboundUpdateInput }
@@ -133,7 +133,7 @@ export function parseOutboundUpdateForm(fd: FormData, now = new Date()): Outboun
  * 출고 위치 선택값: "" = 자동, "위치id|유통기한" (위치id ""=미지정, 유통기한 ""=미상)
  * 칸이 실제로 있는지·수량은 서비스(changeStock strict)에서 확인
  */
-export function parsePick(fd: FormData): FieldResult<StockBucket | null> {
+function parsePick(fd: FormData): FieldResult<StockBucket | null> {
   const raw = text(fd, "pick");
   if (!raw) return { value: null };
   const [loc, exp, ...rest] = raw.split("|");

@@ -371,7 +371,7 @@ const TYPE_LABELS: Record<string, string> = {
   MOVE: "위치 이동",
 };
 
-export type LedgerEntry = {
+type LedgerEntry = {
   id: string;
   createdAtText: string; // 처리일시
   tradeAtText: string | null; // 입고/출고일시
@@ -395,7 +395,7 @@ export type BalanceEntry = {
   quantity: number;
 };
 
-export type LocationHistoryEntry = {
+type LocationHistoryEntry = {
   id: string;
   createdAtText: string;
   fromCode: string | null;

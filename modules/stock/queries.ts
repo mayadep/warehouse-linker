@@ -7,14 +7,8 @@ import { dateOnlyToDb, dbToDateOnly, todayKst } from "@/lib/datetime";
 
 export type StockStatus = "OUT" | "LOW" | "OK";
 
-export const STOCK_STATUS_LABELS: Record<StockStatus, string> = {
-  OUT: "재고 없음",
-  LOW: "부족",
-  OK: "정상",
-};
-
 /** 재고 0 → 없음, 현재고 ≤ 안전재고(>0) → 부족, 그 외 정상 */
-export function stockStatus(stock: number, safetyStock: number): StockStatus {
+function stockStatus(stock: number, safetyStock: number): StockStatus {
   if (stock <= 0) return "OUT";
   if (safetyStock > 0 && stock <= safetyStock) return "LOW";
   return "OK";
@@ -59,7 +53,7 @@ export type StockFilter = {
   page: number;
 };
 
-export const STOCK_PAGE_SIZE = 50;
+const STOCK_PAGE_SIZE = 50;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

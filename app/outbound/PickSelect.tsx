@@ -73,4 +73,3 @@ export default function PickSelect({
   );
 }
 
-export { bucketLabel };

@@ -10,7 +10,7 @@ export const STORAGE_TYPE_LABELS: Record<StorageTypeCode, string> = {
 };
 
 /** 보관유형별 창고코드 접두어 (RF1, FZ1, AM1 ...) */
-export const STORAGE_TYPE_PREFIX: Record<StorageTypeCode, string> = {
+const STORAGE_TYPE_PREFIX: Record<StorageTypeCode, string> = {
   REFRIGERATED: "RF",
   FROZEN: "FZ",
   AMBIENT: "AM",

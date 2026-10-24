@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/EmptyState";
 import type { PartnerOption } from "@/components/PartnerSelect";
 import { TruckIcon } from "lucide-react";
-export type OutboundRevisionView = {
+type OutboundRevisionView = {
   createdAtText: string;
   reason: string;
   changesText: string;
 };
 
-export type OutboundStatusCode = "PENDING" | "CONFIRMED" | "CANCELLED";
+type OutboundStatusCode = "PENDING" | "CONFIRMED" | "CANCELLED";
 
 const STATUS_BADGE: Record<OutboundStatusCode, { label: string; tone: "amber" | "green" | "red" }> = {
   PENDING: { label: "확정 대기", tone: "amber" },

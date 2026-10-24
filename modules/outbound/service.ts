@@ -19,8 +19,8 @@ import { resolvePartner } from "@/modules/partner/service";
 import { activeProductSearchWhere, PRODUCT_SEARCH_LIMIT } from "@/modules/product/service";
 
 export class OutboundError extends Error {}
-export class OutboundConflictError extends OutboundError {}
-export class DuplicateOutboundRequestError extends OutboundError {
+class OutboundConflictError extends OutboundError {}
+class DuplicateOutboundRequestError extends OutboundError {
   constructor() {
     super("이미 처리된 요청입니다. (같은 출고가 두 번 저장되지 않도록 막았습니다)");
   }

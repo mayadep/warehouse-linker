@@ -3,7 +3,7 @@ import { DEFAULT_SAFETY_STOCK } from "./defaults";
 import { isProductUnit, type ProductUnitCode } from "./units";
 import { isStorageTemp, type StorageTempCode } from "./storage";
 
-export const PRODUCT_LIMITS = {
+const PRODUCT_LIMITS = {
   maxNameLength: 100,
   maxCategoryLength: 50,
   maxPrice: 100_000_000,
@@ -23,7 +23,7 @@ export type ProductInput = {
   trackExpiry: boolean;
 };
 
-export type ProductField = keyof ProductInput;
+type ProductField = keyof ProductInput;
 export type ProductFieldErrors = Partial<Record<ProductField, string>>;
 
 export type ProductParseResult =

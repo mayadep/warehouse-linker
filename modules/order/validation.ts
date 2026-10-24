@@ -5,7 +5,7 @@ import { parsePartnerId } from "@/modules/partner/validation";
 import { LOCATION_CODE_RE } from "@/modules/warehouse/codes";
 import { ORDER_LIMITS as L, type OrderTypeCode } from "./codes";
 
-export type OrderLineInput = { productId: string; quantity: number; unitPrice: number | null };
+type OrderLineInput = { productId: string; quantity: number; unitPrice: number | null };
 export type OrderCreateInput = {
   type: OrderTypeCode;
   /** 공급처(발주) 또는 출고처(수주) — 존재·사용 여부는 서비스에서 확인 */
@@ -81,7 +81,7 @@ export function parseOrderCreateForm(
   return { ok: true, data: { type, partnerId: partner.value ?? "", dueDate, memo: memo.value, requestId: requestId.value, lines } };
 }
 
-export type OrderProcessLine = {
+type OrderProcessLine = {
   lineId: string;
   quantity: number;
   /** 발주 입고만: 유통기한 "YYYY-MM-DD" (선택) */

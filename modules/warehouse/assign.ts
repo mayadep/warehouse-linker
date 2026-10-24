@@ -5,7 +5,7 @@ import { STORAGE_TYPES, STORAGE_TYPE_LABELS, type StorageTypeCode } from "./code
 import { recordAudit } from "@/modules/audit/service";
 
 /** 상품 분류 → 보관할 창고 유형 (목록에 없는 분류는 실온) */
-export const CATEGORY_STORAGE: Record<string, StorageTypeCode> = {
+const CATEGORY_STORAGE: Record<string, StorageTypeCode> = {
   냉동식품: "FROZEN",
   유제품: "REFRIGERATED",
 };

@@ -22,7 +22,7 @@ export const INBOUND_LIMITS = {
   maxReasonLength: 200,
 } as const;
 
-export type InboundInput = {
+type InboundInput = {
   productId: string;
   quantity: number;
   unitCost: number | null;
@@ -45,7 +45,7 @@ export type InboundCreateInput = InboundInput & {
   confirmedLocationCode: string | null;
 };
 
-export type InboundField = keyof InboundCreateInput;
+type InboundField = keyof InboundCreateInput;
 export type InboundFieldErrors = Partial<Record<InboundField, string>>;
 
 export type ParseResult =
@@ -58,7 +58,7 @@ export type InboundUpdateInput = Omit<InboundInput, "productId"> & {
   version: number;
   reason: string;
 };
-export type InboundUpdateField = keyof InboundUpdateInput;
+type InboundUpdateField = keyof InboundUpdateInput;
 export type InboundUpdateFieldErrors = Partial<Record<InboundUpdateField, string>>;
 export type UpdateParseResult =
   | { ok: true; data: InboundUpdateInput }

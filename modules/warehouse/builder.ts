@@ -49,7 +49,7 @@ export async function createRacksWithLocations(
 }
 
 /** 기본 6개 창고 (시드용) */
-export const DEFAULT_WAREHOUSES: { code: string; name: string; storageType: StorageType }[] = [
+const DEFAULT_WAREHOUSES: { code: string; name: string; storageType: StorageType }[] = [
   { code: "RF1", name: "냉장 1창고", storageType: "REFRIGERATED" },
   { code: "RF2", name: "냉장 2창고", storageType: "REFRIGERATED" },
   { code: "FZ1", name: "냉동 1창고", storageType: "FROZEN" },

@@ -8,7 +8,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { can, type Permission, type UserRoleCode } from "./codes";
 
-export const SESSION_COOKIE = "wl_session";
+const SESSION_COOKIE = "wl_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12시간 (하루 근무 기준)
 
 export type CurrentUser = { id: string; loginId: string; name: string; role: UserRoleCode };

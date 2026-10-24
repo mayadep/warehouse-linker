@@ -20,9 +20,9 @@ import { activeProductSearchWhere, PRODUCT_SEARCH_LIMIT } from "@/modules/produc
 
 export class InboundError extends Error {}
 /** 다른 사용자가 먼저 수정한 경우 */
-export class InboundConflictError extends InboundError {}
+class InboundConflictError extends InboundError {}
 /** 같은 요청(requestId)이 이미 처리된 경우 */
-export class DuplicateInboundRequestError extends InboundError {
+class DuplicateInboundRequestError extends InboundError {
   constructor() {
     super("이미 처리된 요청입니다. (같은 입고가 두 번 저장되지 않도록 막았습니다)");
   }

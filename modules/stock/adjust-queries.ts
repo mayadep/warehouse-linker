@@ -6,7 +6,7 @@ import { dateOnlyToDb, dbToDateOnly, parseKstDate, todayKst } from "@/lib/dateti
 import { ADJUST_REASONS } from "./codes";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const ADJUST_PAGE_SIZE = 30;
+const ADJUST_PAGE_SIZE = 30;
 
 export type AdjustFilter = {
   q: string;

@@ -56,7 +56,7 @@ export const AUDIT_CATEGORY_TONE: Record<AuditCategoryCode, "gray" | "slate" | "
 };
 
 /** 작업 코드 → 표시명 */
-export const AUDIT_ACTION_LABELS = {
+const AUDIT_ACTION_LABELS = {
   PRODUCT_CREATE: "상품 등록",
   PRODUCT_CONFIRM: "상품 등록 확정",
   PRODUCT_REJECT: "상품 등록 반려",
