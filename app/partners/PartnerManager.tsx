@@ -8,6 +8,7 @@ import {
   PARTNER_TYPES,
   PARTNER_TYPE_LABELS,
   PARTNER_TYPE_TONE,
+  partnerAllows,
   type PartnerTypeCode,
 } from "@/modules/partner/codes";
 import Modal from "@/components/Modal";
@@ -26,6 +27,22 @@ export type PartnerRow = {
   createdAtText: string;
 };
 
+/** 구분 탭: 공급처·출고처 탭은 겸용 거래처도 포함 (입출고 화면의 선택 목록과 같은 기준) */
+type TypeTab = "ALL" | "SUPPLIER" | "CUSTOMER" | "BOTH";
+
+const TYPE_TABS: { value: TypeTab; label: string }[] = [
+  { value: "ALL", label: "전체" },
+  { value: "SUPPLIER", label: "공급처" },
+  { value: "CUSTOMER", label: "출고처" },
+  { value: "BOTH", label: "겸용" },
+];
+
+function matchesTab(p: PartnerRow, tab: TypeTab): boolean {
+  if (tab === "ALL") return true;
+  if (tab === "BOTH") return p.type === "BOTH";
+  return partnerAllows(p.type, tab);
+}
+
 const initial: PartnerActionState = { status: "idle", message: "" };
 const errText = "mt-1 block text-xs text-red-600";
 
@@ -34,16 +51,22 @@ type Dialog = { kind: "create" } | { kind: "edit"; partner: PartnerRow } | null;
 export default function PartnerManager({ partners }: { partners: PartnerRow[] }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [flash, setFlash] = useState("");
+  const [tab, setTab] = useState<TypeTab>("ALL");
+  const [query, setQuery] = useState("");
   const done = (message: string) => {
     setFlash(message);
     setDialog(null);
   };
 
+  const keyword = query.trim().toLowerCase();
+  const visible = partners.filter((p) => matchesTab(p, tab) && (!keyword || p.name.toLowerCase().includes(keyword)));
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4 mobile:flex-wrap">
         <p className="text-sm text-muted-foreground">
-          거래처 <b className="font-semibold text-foreground">{partners.length}</b>곳
+          거래처 <b className="font-semibold text-foreground">{visible.length}</b>곳
+          {visible.length !== partners.length && ` (전체 ${partners.length}곳)`}
         </p>
         <Button
           size="sm"
@@ -55,6 +78,31 @@ export default function PartnerManager({ partners }: { partners: PartnerRow[] })
           <PlusIcon data-icon="inline-start" />
           거래처 추가
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+        <div role="group" aria-label="구분" className="flex flex-wrap gap-1">
+          {TYPE_TABS.map((t) => (
+            <Button
+              key={t.value}
+              type="button"
+              size="sm"
+              variant={tab === t.value ? "default" : "outline"}
+              aria-pressed={tab === t.value}
+              onClick={() => setTab(t.value)}
+            >
+              {t.label} {partners.filter((p) => matchesTab(p, t.value)).length}
+            </Button>
+          ))}
+        </div>
+        <Input
+          type="search"
+          aria-label="거래처명 검색"
+          placeholder="거래처명 검색"
+          className="h-8 w-56 text-sm"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
 
       {flash && (
@@ -83,7 +131,14 @@ export default function PartnerManager({ partners }: { partners: PartnerRow[] })
                 </td>
               </tr>
             )}
-            {partners.map((p) => (
+            {partners.length > 0 && visible.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                  조건에 맞는 거래처가 없습니다.
+                </td>
+              </tr>
+            )}
+            {visible.map((p) => (
               <tr key={p.id} className={p.isActive ? "" : "text-muted-foreground"}>
                 <td className="left">{p.name}</td>
                 <td>

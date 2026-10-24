@@ -51,10 +51,10 @@ export async function listPartnerOptions(kind: PartnerKind, keepId?: string | nu
   });
 }
 
-/** 거래처 관리 화면 목록 (거래 건수 포함) */
+/** 거래처 관리 화면 목록 (거래 건수 포함). 사용 중 → 구분(공급처·출고처·겸용, enum 선언 순) → 이름순 */
 export async function listPartners() {
   return prisma.partner.findMany({
-    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    orderBy: [{ isActive: "desc" }, { type: "asc" }, { name: "asc" }],
     include: { _count: { select: { inbounds: true, outbounds: true, orders: true } } },
   });
 }
