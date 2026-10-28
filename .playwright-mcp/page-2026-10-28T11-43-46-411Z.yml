@@ -1,0 +1,13 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - heading "재고관리" [level=1] [ref=e4]
+    - paragraph [ref=e6]: 아이디와 비밀번호로 로그인하세요.
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - text: 아이디
+        - textbox "아이디" [active] [ref=e9]
+      - generic [ref=e10]:
+        - text: 비밀번호
+        - textbox "비밀번호" [ref=e11]
+      - button "로그인" [ref=e12]
+  - alert [ref=e13]

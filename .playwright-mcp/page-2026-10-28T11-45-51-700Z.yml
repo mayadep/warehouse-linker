@@ -1,0 +1,9 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - banner [ref=f4e3]:
+      - link "재고관리 현장" [ref=f4e4] [cursor=pointer]:
+        - /url: /m
+      - generic [ref=f4e8]: 관리자
+    - main [ref=f4e9]:
+      - status "불러오는 중" [ref=f4e10]
+  - alert [ref=f4e14]
