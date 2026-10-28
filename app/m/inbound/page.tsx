@@ -4,7 +4,7 @@ import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import { searchProductsForInbound } from "@/modules/inbound/service";
 import { listPartnerOptions } from "@/modules/partner/service";
-import InboundForm from "@/app/inbound/InboundForm";
+import InboundForm from "@/app/(pc)/inbound/InboundForm";
 
 /** 현장 입고 등록: PC 입고 폼(스캔 선택·로트번호 포함)을 그대로 쓴다. 내역 표는 PC 화면에서 확인 */
 export default async function MobileInboundPage() {

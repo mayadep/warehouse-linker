@@ -7,7 +7,7 @@ import PwaRegister from "./PwaRegister";
 export default async function MobileLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
   return (
-    <div className="mx-auto flex min-h-screen max-w-xl flex-col">
+    <div className="mx-auto flex min-h-screen max-w-xl flex-col bg-background">
       <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-card px-4">
         <Link href="/m" className="flex items-center gap-2 text-base font-semibold">
           <HomeIcon className="size-5" /> 재고관리 현장

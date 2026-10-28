@@ -30,11 +30,9 @@ export default async function MobileHubPage() {
           </span>
         </Link>
       ))}
-      {/* 루트 레이아웃(사이드바 유무)이 경로로 갈리므로 전체 페이지 이동이 필요 */}
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/" className="mt-2 flex items-center justify-center gap-2 rounded-xl border p-3 text-sm text-muted-foreground">
+      <Link href="/" className="mt-2 flex items-center justify-center gap-2 rounded-xl border p-3 text-sm text-muted-foreground">
         <MonitorIcon className="size-4" /> PC 화면으로 이동
-      </a>
+      </Link>
     </div>
   );
 }

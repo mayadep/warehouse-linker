@@ -205,7 +205,7 @@
 
 ## 모바일/PWA 현장 화면 (app/m) — 2026-10-28
 - 설치: `app/manifest.ts`(시작 `/m`, standalone), 아이콘 `/pwa-icon/192|512`(next/og 생성), `public/sw.js`(설치·오프라인 안내만, **재고·주문 데이터는 캐시하지 않음**), `public/offline.html`. `proxy.ts`는 이 PWA 파일만 로그인 없이 허용.
-- 레이아웃: `proxy.ts`가 `x-pathname` 헤더를 넘기고, 루트 레이아웃은 `/m`, `/m/*` 에서 사이드바·헤더를 빼고 `app/m/layout.tsx`(상단 홈 + 사용자명)로 표시.
+- 레이아웃(라우트 그룹): 루트 `app/layout.tsx`는 html·body·폰트만. PC 업무 화면은 `app/(pc)/`(사이드바+헤더+헤더 알림 조회는 `app/(pc)/layout.tsx`), 모바일은 `app/m/layout.tsx`(상단 홈 + 사용자명), 로그인은 틀 없음. 그룹 폴더는 URL에 나타나지 않는다. PC↔모바일 이동은 같은 루트 레이아웃 안이라 일반 `<Link>`로 된다. `/m`은 PC용 알림 조회(재고 부족·유통기한)를 하지 않는다.
 - 화면: `/m` 허브(권한별 메뉴), `/m/lookup` 재고 조회(바코드·상품코드·품명·위치코드 → 칸별 재고, `mobileLookupAction`, `stock.view`), `/m/inbound`·`/m/outbound` (PC 입출고 폼 재사용, 스캔 선택·로트번호 포함, 폼은 1열로 표시), `/m/count`·`/m/count/[id]` 실사(위치·상품 스캔 필터, 카드별 수량 입력·[일치] 버튼, 확정은 PC에서 관리자).
 - 모든 권한 검사는 기존대로 페이지(`requirePageUser`+`can`)와 Server Action(`authorize`)에서 서버가 한다.
 - 인쇄 시 사이드바·헤더는 숨김(`globals.css` print).

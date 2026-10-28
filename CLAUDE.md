@@ -105,7 +105,9 @@ actions.ts: Server Actions
 
 codes.ts: 라벨 및 상수
 
-app/<screen>/: 페이지 및 화면 컴포넌트
+app/(pc)/<screen>/: PC 업무 화면 페이지 및 화면 컴포넌트 (사이드바·헤더 레이아웃은 app/(pc)/layout.tsx, URL에는 (pc)가 나타나지 않음)
+
+app/m/: 현장용 모바일(PWA) 화면 (자체 레이아웃 app/m/layout.tsx)
 
 lib/: 공통 유틸리티
 
