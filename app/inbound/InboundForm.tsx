@@ -269,6 +269,11 @@ export default function InboundForm({
         {err.expiryDate && <span className="mt-1 block text-xs text-red-600">{err.expiryDate}</span>}
       </label>
       <label className="text-sm">
+        로트번호 (선택)
+        <Input name="lotNo" maxLength={30} className={input} placeholder="제조·공급처 로트" />
+        {err.lotNo && <span className="mt-1 block text-xs text-red-600">{err.lotNo}</span>}
+      </label>
+      <label className="text-sm">
         보관 위치 (비우면 기본 위치)
         <Input
           name="locationCode"

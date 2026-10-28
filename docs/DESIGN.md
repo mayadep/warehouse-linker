@@ -184,6 +184,13 @@
 - 카메라 스캔(`components/BarcodeScanButton`): `BarcodeDetector` 우선, 미지원 브라우저는 `@zxing/browser` 폴백. HTTPS 또는 localhost 필요.
 - 라벨 출력 `/products/labels`(관리자): 상품 바코드·위치코드(Code128) 라벨을 `bwip-js`로 SVG 생성해 인쇄.
 
+## 로트번호 · FEFO · 로트 추적 — 2026-10-28, 마이그레이션 `lot_no_fefo`
+- 로트번호: `Inbound.lotNo`(선택, 30자, 영문·숫자·`-._/`)를 입고 등록 때만 입력(등록 후 수정 불가, 틀리면 취소 후 재등록). `StockBalance`/`StockMovement`에 `lotNo` 추가, 칸 유일키는 (상품, 위치, 유통기한, 입고일, 로트번호) NULLS NOT DISTINCT.
+- 칸 합치기 규칙: 같은 로트번호끼리만 한 칸으로 합친다. 번호 없는 입고는 기존처럼 입고일 기준. 기존 재고는 로트 미지정(null).
+- 로트번호는 입고 확정·정정·취소·출고취소 복원·위치이동·유통기한 변경에서 그대로 따라간다(`changeStock`/`transferBucket`).
+- 출고 순서 `Product.pickPolicy`(FIFO 기본 / FEFO): FEFO는 유통기한을 아는 재고를 빠른 순으로 먼저, 유통기한 미상은 뒤로, 같으면 입고일순. 관리자가 상품 수정에서 변경(`productVersion`에 포함).
+- 로트 추적 `/stock/lots`(재고 조회 권한): 로트번호 정확 일치(대소문자 무시)로 현재 남은 재고, 입고·출고·정정·취소 이력(거래처 포함, 최근 200건).
+
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
 2. 유사 건 경고: 최근 10분 내 같은 상품·거래처·수량이 있으면 status "confirm" 반환(저장 안 함) → [그래도 등록](confirmDuplicate=1) 시 저장

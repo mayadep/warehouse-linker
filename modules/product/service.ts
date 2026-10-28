@@ -5,7 +5,7 @@ import { productVersion, type ProductInput, type ProductUpdateInput } from "./va
 import { recordAudit } from "@/modules/audit/service";
 import type { CurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import { STORAGE_TEMP_LABELS, type StorageTempCode } from "./storage";
+import { PICK_POLICY_LABELS, STORAGE_TEMP_LABELS, type PickPolicyCode, type StorageTempCode } from "./storage";
 import { BARCODE_UNIT_LABELS, MAX_BARCODES_PER_PRODUCT, normalizeBarcode, validateBarcode } from "./barcode";
 import type { BarcodeUnit } from "@prisma/client";
 
@@ -170,6 +170,7 @@ async function lockProduct(tx: Prisma.TransactionClient, productId: string) {
       boxQty: true,
       baseUnit: true,
       safetyStock: true,
+      pickPolicy: true,
       stock: true,
       status: true,
       locationId: true,
@@ -197,9 +198,11 @@ export async function updateProduct(input: ProductUpdateInput & { hasBoxQty: boo
       price: cur.status === "PENDING" ? cur.price : input.price,
       boxQty: cur.baseUnit === "BOX" ? 1 : input.hasBoxQty ? input.boxQty : cur.boxQty,
       safetyStock: input.safetyStock,
+      pickPolicy: input.pickPolicy,
     };
-    const labels = { name: "품명", category: "분류", storageTemp: "보관 온도", price: "판매가", boxQty: "박스당 입수", safetyStock: "안전재고" } as const;
-    const display = (k: keyof typeof labels, v: string | number) => (k === "storageTemp" ? STORAGE_TEMP_LABELS[v as StorageTempCode] : v);
+    const labels = { name: "품명", category: "분류", storageTemp: "보관 온도", price: "판매가", boxQty: "박스당 입수", safetyStock: "안전재고", pickPolicy: "출고 순서" } as const;
+    const display = (k: keyof typeof labels, v: string | number) =>
+      k === "storageTemp" ? STORAGE_TEMP_LABELS[v as StorageTempCode] : k === "pickPolicy" ? PICK_POLICY_LABELS[v as PickPolicyCode] : v;
     const changes: Record<string, { from: string | number; to: string | number }> = {};
     for (const k of Object.keys(labels) as (keyof typeof labels)[]) {
       if (cur[k] !== next[k]) changes[labels[k]] = { from: display(k, cur[k]), to: display(k, next[k]) };
@@ -347,6 +350,7 @@ export async function listProducts(keyword?: string, includeInactive = false, pa
       storageTemp: true,
       boxQty: true,
       safetyStock: true,
+      pickPolicy: true,
       trackExpiry: true,
       status: true,
       createdBy: { select: { name: true } },

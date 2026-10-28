@@ -154,6 +154,7 @@ export default async function NewProductPage({
                         baseUnit: p.baseUnit,
                         boxQty: p.boxQty,
                         safetyStock: p.safetyStock,
+                        pickPolicy: p.pickPolicy,
                         status: p.status,
                       }}
                       showPrice={showPrice}

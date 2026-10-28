@@ -93,7 +93,12 @@ export default async function StockPage({
 
   return (
     <div>
-      <h2 className="mb-6 text-2xl font-semibold tracking-tight">재고현황</h2>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-semibold tracking-tight">재고현황</h2>
+        <Link href="/stock/lots" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          로트 추적
+        </Link>
+      </div>
       {selectedWarehouse && (
         <p className="-mt-4 mb-4 text-sm text-muted-foreground">
           <b className="font-semibold text-foreground">

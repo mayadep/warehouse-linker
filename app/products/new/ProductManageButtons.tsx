@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { BARCODE_UNITS, BARCODE_UNIT_LABELS } from "@/modules/product/barcode";
 import BarcodeScanButton from "@/components/BarcodeScanButton";
-import { STORAGE_TEMPS, STORAGE_TEMP_LABELS, type StorageTempCode } from "@/modules/product/storage";
+import { PICK_POLICIES, PICK_POLICY_LABELS, STORAGE_TEMPS, STORAGE_TEMP_LABELS, type PickPolicyCode, type StorageTempCode } from "@/modules/product/storage";
 
 const initialReview: ProductReviewState = { status: "idle", message: "" };
 const initialUpdate: ProductUpdateState = { status: "idle", message: "" };
@@ -32,6 +32,7 @@ export type ManageProduct = {
   baseUnit: string;
   boxQty: number;
   safetyStock: number;
+  pickPolicy: PickPolicyCode;
   status: "PENDING" | "ACTIVE" | "INACTIVE";
 };
 
@@ -147,6 +148,18 @@ function EditDialog({
           안전재고 <span className="text-red-600">*</span>
           <Input name="safetyStock" type="number" min={0} step={1} defaultValue={product.safetyStock} className="w-full text-right tabular-nums" />
           {err.safetyStock && <span className="mt-1 block text-xs text-red-600">{err.safetyStock}</span>}
+        </label>
+        <label className="text-sm">
+          출고 순서 <span className="text-red-600">*</span>
+          <NativeSelect name="pickPolicy" defaultValue={product.pickPolicy} className="w-full">
+            {PICK_POLICIES.map((p) => (
+              <option key={p} value={p}>
+                {PICK_POLICY_LABELS[p]}
+              </option>
+            ))}
+          </NativeSelect>
+          <span className="mt-1 block text-xs text-muted-foreground">자동 출고 때 어느 재고부터 뺄지 정합니다. 유통기한이 있는 상품은 유통기한 임박 우선을 권장합니다.</span>
+          {err.pickPolicy && <span className="mt-1 block text-xs text-red-600">{err.pickPolicy}</span>}
         </label>
         {state.status === "error" && (
           <p aria-live="polite" className="text-sm text-red-600">
