@@ -38,6 +38,8 @@ type Line = {
   bookQty: number;
   currentQty: number | null;
   countedQty: number | null;
+  /** 진행 중 저장된 줄: 확정하면 실제 반영될 증감 (센 시각 기준) */
+  expectedDelta: number | null;
   appliedDelta: number | null;
 };
 
@@ -65,29 +67,38 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
   const valueOf = (l: Line) => inputs[l.id] ?? (l.countedQty === null ? "" : String(l.countedQty));
   // 장부 기준 수량: 진행 중에는 지금 장부, 끝난 실사는 만들 때 장부
   const baseOf = (l: Line) => l.currentQty ?? l.bookQty;
+  // 차이: 저장된 값 그대로면 서버가 센 시각 기준으로 계산한 값, 입력을 고치는 중이면 지금 장부 기준 임시값
+  const diffOf = (l: Line): number | null => {
+    const raw = inputs[l.id] ?? (l.countedQty === null ? "" : String(l.countedQty));
+    if (raw === "") return null;
+    if (l.expectedDelta !== null && raw === String(l.countedQty)) return l.expectedDelta;
+    return Number(raw) - baseOf(l);
+  };
 
   const visible = useMemo(() => {
     const k = filter.trim().toLowerCase();
     return lines.filter((l) => {
       if (k && ![l.sku, l.name, l.locationCode ?? "", l.lotNo ?? ""].some((v) => v.toLowerCase().includes(k))) return false;
       if (onlyDiff) {
-        const raw = inputs[l.id] ?? (l.countedQty === null ? "" : String(l.countedQty));
-        if (raw === "" || Number(raw) === (l.currentQty ?? l.bookQty)) return false;
+        const d = diffOf(l);
+        if (d === null || d === 0) return false;
       }
       return true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, filter, onlyDiff, inputs]);
 
   const stats = useMemo(() => {
     let counted = 0;
     let diffLines = 0;
     for (const l of lines) {
-      const raw = inputs[l.id] ?? (l.countedQty === null ? "" : String(l.countedQty));
-      if (raw === "") continue;
+      const d = diffOf(l);
+      if (d === null) continue;
       counted++;
-      if (Number(raw) !== (l.currentQty ?? l.bookQty)) diffLines++;
+      if (d !== 0) diffLines++;
     }
     return { counted, diffLines };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, inputs]);
 
   function save(l: Line) {
@@ -174,7 +185,7 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
               <th>로트</th>
               <th className="num">{counting ? "장부(현재)" : "장부"}</th>
               <th className="num">실사</th>
-              <th className="num">차이</th>
+              <th className="num">{counting ? "차이(센 시각 기준)" : "차이"}</th>
             </tr>
           </thead>
           <tbody>
@@ -186,7 +197,7 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
             {visible.map((l) => {
               const raw = valueOf(l);
               const base = baseOf(l);
-              const diff = raw === "" ? null : Number(raw) - base;
+              const diff = diffOf(l);
               const moved = counting && l.currentQty !== null && l.currentQty !== l.bookQty;
               return (
                 <tr key={l.id}>

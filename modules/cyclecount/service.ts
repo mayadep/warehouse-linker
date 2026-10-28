@@ -118,6 +118,35 @@ export async function listCycleCounts() {
 const balanceKey = (productId: string, locationId: string | null, exp: Date | null, lot: Date | null, lotNo: string | null) =>
   [productId, locationId ?? "", exp?.getTime() ?? "", lot?.getTime() ?? "", lotNo ?? ""].join("|");
 
+type KeyedLine = { productId: string; locationId: string | null; expiryDate: Date | null; lotDate: Date | null; lotNo: string | null };
+type AfterMovement = KeyedLine & { quantity: number; createdAt: Date };
+
+/** 센 시각 이후 해당 상품들의 재고 변동 (입고·출고·이동·조정 모두, 칸·로트별 부호 있는 수량) */
+async function movementsSince(
+  db: Pick<Prisma.TransactionClient, "stockMovement">,
+  productIds: string[],
+  since: Date
+): Promise<AfterMovement[]> {
+  if (productIds.length === 0) return [];
+  return db.stockMovement.findMany({
+    where: { productId: { in: productIds }, createdAt: { gt: since } },
+    select: { productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, quantity: true, createdAt: true },
+  });
+}
+
+/**
+ * 센 시각의 칸 재고 = 지금 칸 재고 − 센 시각 이후의 그 칸·로트 변동 합.
+ * 실사 증감 = 실사 수량 − 센 시각의 칸 재고 (센 뒤에 실제로 나간 출고 등은 그대로 둔다)
+ */
+function stockAtCountTime(line: KeyedLine, current: number, countedAt: Date, after: AfterMovement[]): number {
+  const k = balanceKey(line.productId, line.locationId, line.expiryDate, line.lotDate, line.lotNo);
+  let moved = 0;
+  for (const m of after) {
+    if (m.createdAt > countedAt && balanceKey(m.productId, m.locationId, m.expiryDate, m.lotDate, m.lotNo) === k) moved += m.quantity;
+  }
+  return Math.max(0, current - moved);
+}
+
 export async function getCycleCount(id: string) {
   const count = await prisma.cycleCount.findUnique({
     where: { id },
@@ -146,6 +175,7 @@ export async function getCycleCount(id: string) {
       lotNo: true,
       bookQty: true,
       countedQty: true,
+      countedAt: true,
       appliedDelta: true,
       product: { select: { sku: true, name: true, baseUnit: true } },
       location: { select: { code: true } },
@@ -154,7 +184,16 @@ export async function getCycleCount(id: string) {
   });
   // 진행 중이면 현재 장부 수량도 함께 (실사표를 뜬 뒤 입출고로 달라졌는지 표시)
   let current = new Map<string, number>();
+  let after: AfterMovement[] = [];
   if (count.status === "COUNTING") {
+    const sinceTimes = lines.flatMap((l) => (l.countedAt ? [l.countedAt.getTime()] : []));
+    if (sinceTimes.length > 0) {
+      after = await movementsSince(
+        prisma,
+        [...new Set(lines.filter((l) => l.countedAt).map((l) => l.productId))],
+        new Date(Math.min(...sinceTimes))
+      );
+    }
     const bals = await prisma.stockBalance.findMany({
       where: { productId: { in: [...new Set(lines.map((l) => l.productId))] } },
       select: { productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, quantity: true },
@@ -177,6 +216,17 @@ export async function getCycleCount(id: string) {
           ? (current.get(balanceKey(l.productId, l.locationId, l.expiryDate, l.lotDate, l.lotNo)) ?? 0)
           : null,
       countedQty: l.countedQty,
+      // 진행 중: 확정하면 실제로 반영될 증감 (센 시각 기준). 아직 안 셌으면 null
+      expectedDelta:
+        count.status === "COUNTING" && l.countedQty !== null && l.countedAt
+          ? l.countedQty -
+            stockAtCountTime(
+              l,
+              current.get(balanceKey(l.productId, l.locationId, l.expiryDate, l.lotDate, l.lotNo)) ?? 0,
+              l.countedAt,
+              after
+            )
+          : null,
       appliedDelta: l.appliedDelta,
     })),
   };
@@ -262,7 +312,7 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
 
       const lines = await tx.cycleCountLine.findMany({
         where: { countId: input.countId },
-        select: { id: true, productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, countedQty: true },
+        select: { id: true, productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, countedQty: true, countedAt: true },
         orderBy: [{ productId: "asc" }, { id: "asc" }], // 상품 순서 고정 (동시 작업과의 교착 방지)
       });
       // 칸 재고를 읽기 전에 대상 상품을 id 순으로 모두 잠근다 → 읽은 값 이후 출고·입고가 끼어들지 못함
@@ -270,10 +320,18 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
       if (productIds.length > 0) {
         await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" = ANY(${productIds}::text[]) ORDER BY "id" FOR UPDATE`;
       }
+      // 센 시각 이후의 변동은 반영 전에 한 번에 읽는다 (이 확정이 만드는 조정은 포함되지 않게)
+      const counted = lines.filter((l) => l.countedQty !== null && l.countedAt);
+      const after = await movementsSince(
+        tx,
+        productIds,
+        counted.length > 0 ? new Date(Math.min(...counted.map((l) => l.countedAt!.getTime()))) : new Date()
+      );
       let plus = 0;
       let minus = 0;
       let adjusted = 0;
       let skipped = 0;
+      let clamped = 0;
       for (const l of lines) {
         if (l.countedQty === null) {
           skipped++;
@@ -283,7 +341,13 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
           where: { productId: l.productId, locationId: l.locationId, expiryDate: l.expiryDate, lotDate: l.lotDate, lotNo: l.lotNo },
           select: { quantity: true },
         });
-        const delta = l.countedQty - (cur?.quantity ?? 0);
+        const have = cur?.quantity ?? 0;
+        let delta = l.countedQty - stockAtCountTime(l, have, l.countedAt ?? new Date(0), after);
+        // 센 뒤에 재고가 이미 줄어 지금 칸 재고보다 많이 뺄 수는 없다 (있는 만큼만)
+        if (delta < -have) {
+          delta = -have;
+          clamped++;
+        }
         await tx.cycleCountLine.update({ where: { id: l.id }, data: { appliedDelta: delta } });
         if (delta === 0) continue;
         if (delta > 0 && l.locationId) {
@@ -318,7 +382,7 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
         targetId: input.countId,
         targetLabel: count.countNo,
         summary: `재고 실사 확정: ${count.countNo} (조정 ${adjusted.toLocaleString()}줄, +${plus.toLocaleString()} / -${minus.toLocaleString()}, 미실사 ${skipped.toLocaleString()}줄)`,
-        detail: { adjusted, plus, minus, skipped },
+        detail: { adjusted, plus, minus, skipped, clamped },
       });
       return { countNo: count.countNo, adjusted, plus, minus, skipped };
     },
