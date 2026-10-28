@@ -237,19 +237,22 @@ enum CycleCountStatus {
 
 // 재고 실사표: 범위(창고·위치코드 접두)의 칸 재고를 스냅샷으로 뜨고 실제 수량을 입력해 차이를 재고조정으로 반영
 model CycleCount {
-  id            String           @id @default(uuid())
-  countNo       String           @unique // 실사번호 (CC-YYMMDD-NNN)
-  requestId     String?          @unique // 등록 요청 고유키
-  status        CycleCountStatus @default(COUNTING)
-  scope         String // 범위 표시 (예: "냉장1 · RF1-R01")
-  memo          String?
-  version       Int              @default(0) // 확정·취소 동시 처리 방지
-  createdById   String?
-  createdBy     User?            @relation("CycleCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  confirmedById String?
-  confirmedBy   User?            @relation("CycleCountConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
-  confirmedAt   DateTime?
-  createdAt     DateTime         @default(now())
+  id             String           @id @default(uuid())
+  countNo        String           @unique // 실사번호 (CC-YYMMDD-NNN)
+  requestId      String?          @unique // 등록 요청 고유키
+  status         CycleCountStatus @default(COUNTING)
+  scope          String // 범위 표시 (예: "냉장1 · RF1-R01")
+  warehouseId    String? // 범위: 창고 (null = 창고 제한 없음)
+  warehouse      Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  locationPrefix String? // 범위: 위치코드 앞부분 (null = 제한 없음). 발견분 추가 때 서버가 범위를 검증
+  memo           String?
+  version        Int              @default(0) // 확정·취소 동시 처리 방지
+  createdById    String?
+  createdBy      User?            @relation("CycleCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById  String?
+  confirmedBy    User?            @relation("CycleCountConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt    DateTime?
+  createdAt      DateTime         @default(now())
 
   lines CycleCountLine[]
 
@@ -380,8 +383,9 @@ model Warehouse {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  racks     Rack[]
-  locations Location[]
+  racks       Rack[]
+  locations   Location[]
+  cycleCounts CycleCount[]
 }
 
 // 랙 (창고 안의 선반 1개)

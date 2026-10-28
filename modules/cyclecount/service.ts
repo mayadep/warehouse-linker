@@ -51,6 +51,8 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
               countNo: `${prefix}${String(seq).padStart(3, "0")}`,
               requestId: input.requestId,
               scope,
+              warehouseId: input.warehouseId,
+              locationPrefix: input.locationPrefix || null,
               memo: input.memo,
               createdById: actor.id,
             },
@@ -263,8 +265,12 @@ export async function saveCount(input: { lineId: string; countedQty: number | nu
 export async function addFoundLine(input: CountFoundInput, actor: CurrentUser) {
   return prisma.$transaction(async (tx) => {
     const c = await requireCounting(tx, input.countId);
+    const range = await tx.cycleCount.findUniqueOrThrow({
+      where: { id: c.id },
+      select: { scope: true, warehouseId: true, locationPrefix: true },
+    });
     const [location, bySku, byBarcode] = await Promise.all([
-      tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true } }),
+      tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true, code: true, warehouseId: true } }),
       tx.product.findUnique({ where: { sku: input.productKey.toUpperCase() }, select: { id: true, sku: true, name: true, status: true } }),
       tx.productBarcode.findUnique({
         where: { code: input.productKey },
@@ -275,6 +281,13 @@ export async function addFoundLine(input: CountFoundInput, actor: CurrentUser) {
     if (!product) throw new CountError(`상품을 찾을 수 없습니다: ${input.productKey} (상품코드 또는 등록된 바코드)`);
     if (!location) throw new CountError(`존재하지 않는 위치코드입니다: ${input.locationCode}`);
     if (!product || product.status !== "ACTIVE") throw new CountError("확정된 상품만 추가할 수 있습니다.");
+    // 발견분 위치는 실사표의 범위(창고·위치코드 앞부분) 안이어야 한다 (범위 밖 칸의 재고를 덮어쓰지 않도록)
+    if (
+      (range.warehouseId && location.warehouseId !== range.warehouseId) ||
+      (range.locationPrefix && !location.code.startsWith(range.locationPrefix))
+    ) {
+      throw new CountError(`${location.code}은(는) 이 실사표의 범위(${range.scope}) 밖입니다. 범위 안의 위치코드를 입력하세요.`);
+    }
     const inactive = await inactiveLocationMessage(tx, location.id);
     if (inactive) throw new CountError(inactive);
     const expiry = input.expiryDate ? dateOnlyToDb(input.expiryDate) : null;
