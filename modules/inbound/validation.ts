@@ -36,6 +36,8 @@ type InboundInput = {
 export type InboundCreateInput = InboundInput & {
   /** 유통기한 "YYYY-MM-DD" (선택, 나중에 재고현황에서 입력 가능) */
   expiryDate: string | null;
+  /** 로트번호 (선택, 등록 후 수정 불가) */
+  lotNo: string | null;
   /** 넣을 위치코드 (선택, 비우면 상품 기본 보관위치) — 존재 여부는 서비스에서 확인 */
   locationCode: string | null;
   requestId: string;
@@ -86,7 +88,11 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
   const c = parseCommon(fd, now, false);
   const requestId = parseRequestId(fd);
   const expiryDate = parseOptionalDate(fd, "expiryDate", "유통기한");
-  for (const [k, r] of Object.entries({ ...c, requestId, expiryDate })) {
+  const lotNo = parseOptionalText(fd, "lotNo", "로트번호", 30);
+  if (lotNo.value && !/^[A-Za-z0-9._/-]+$/.test(lotNo.value.replace(/\s+/g, ""))) {
+    lotNo.error = "로트번호는 영문·숫자와 - . _ / 만 사용할 수 있습니다.";
+  }
+  for (const [k, r] of Object.entries({ ...c, requestId, expiryDate, lotNo })) {
     if (r.error) errors[k as InboundField] = r.error;
   }
   const locationCode = text(fd, "locationCode").toUpperCase() || null;
@@ -106,6 +112,7 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
       memo: c.memo.value,
       receivedAt: c.receivedAt.value,
       expiryDate: expiryDate.value,
+      lotNo: lotNo.value?.replace(/\s+/g, "") || null,
       locationCode,
       requestId: requestId.value,
       confirmDuplicate: parseConfirm(fd),

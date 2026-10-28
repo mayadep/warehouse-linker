@@ -42,6 +42,8 @@ const PERMISSIONS = {
   "outbound.manage": ["WAREHOUSE", "ADMIN"], // 출고 확정·수정·취소·대기건 삭제
   "stock.view": ["STAFF", "WAREHOUSE", "VIEWER", "ADMIN"], // 재고현황·원장 조회
   "price.view": ["WAREHOUSE", "ADMIN"], // 판매가·단가·금액 보기
+  "count.manage": ["WAREHOUSE", "ADMIN"], // 재고 실사표 생성·수량 입력·취소
+  "count.confirm": ["ADMIN"], // 재고 실사 확정 (재고에 반영)
   admin: ["ADMIN"], // 그 외 모든 메뉴·작업 (발주·수주, 배차, 창고, 재고 설정, 로그, 사용자)
 } as const satisfies Record<string, readonly UserRoleCode[]>;
 

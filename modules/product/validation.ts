@@ -1,7 +1,9 @@
 // 상품 등록 입력값 검증 (서버에서 반드시 실행)
 import { DEFAULT_SAFETY_STOCK } from "./defaults";
 import { isProductUnit, type ProductUnitCode } from "./units";
-import { isStorageTemp, type StorageTempCode } from "./storage";
+import { isBarcodeUnit, normalizeBarcode } from "./barcode";
+import type { BarcodeUnit } from "@prisma/client";
+import { isPickPolicy, isStorageTemp, type PickPolicyCode, type StorageTempCode } from "./storage";
 
 const PRODUCT_LIMITS = {
   maxNameLength: 100,
@@ -133,8 +135,8 @@ export function parseProductForm(fd: FormData): ProductParseResult {
 /**
  * 수정 화면이 열린 시점의 값 스냅샷. 재고 변동(updatedAt)과 무관하게 '수정 대상 값'이 그대로일 때만 저장되도록 한다.
  */
-export function productVersion(p: { name: string; category: string; price: number; boxQty: number; safetyStock: number; status: string; storageTemp: string }) {
-  return [p.status, p.name, p.category, p.price, p.boxQty, p.safetyStock, p.storageTemp].join("\u001f");
+export function productVersion(p: { name: string; category: string; price: number; boxQty: number; safetyStock: number; status: string; storageTemp: string; pickPolicy: string }) {
+  return [p.status, p.name, p.category, p.price, p.boxQty, p.safetyStock, p.storageTemp, p.pickPolicy].join("\u001f");
 }
 
 export type ProductUpdateInput = {
@@ -147,9 +149,10 @@ export type ProductUpdateInput = {
   price: number;
   boxQty: number;
   safetyStock: number;
+  pickPolicy: PickPolicyCode;
 };
 
-export type ProductUpdateFieldErrors = Partial<Record<"name" | "category" | "storageTemp" | "price" | "boxQty" | "safetyStock", string>>;
+export type ProductUpdateFieldErrors = Partial<Record<"name" | "category" | "storageTemp" | "price" | "boxQty" | "safetyStock" | "pickPolicy", string>>;
 
 /**
  * 상품 수정 입력. 품목코드·기본단위·유통기한 관리는 입출고 이력의 의미가 바뀌므로 수정 대상이 아니다.
@@ -180,6 +183,11 @@ export function parseProductUpdateForm(
   let storageTemp: StorageTempCode = "AMBIENT";
   if (!isStorageTemp(tempRaw)) errors.storageTemp = "보관 온도를 선택하세요.";
   else storageTemp = tempRaw;
+
+  const policyRaw = text(fd, "pickPolicy");
+  let pickPolicy: PickPolicyCode = "FIFO";
+  if (!isPickPolicy(policyRaw)) errors.pickPolicy = "출고 순서를 선택하세요.";
+  else pickPolicy = policyRaw;
 
   // 판매가: 확정 대기 상품은 화면에서 입력받지 않음(서비스에서 무시)
   const priceRaw = text(fd, "price").replaceAll(",", "");
@@ -212,7 +220,7 @@ export function parseProductUpdateForm(
   else safetyStock = Number(safetyRaw);
 
   if (Object.keys(errors).length > 0) return { ok: false, message: "입력값을 확인하세요.", errors };
-  return { ok: true, data: { productId, version, name, category, storageTemp, price, boxQty, safetyStock }, hasBoxQty };
+  return { ok: true, data: { productId, version, name, category, storageTemp, price, boxQty, safetyStock, pickPolicy }, hasBoxQty };
 }
 
 /** 상품 비활성화 / 다시 사용 */
@@ -224,4 +232,22 @@ export function parseProductActiveForm(
   const mode = text(fd, "mode");
   if (mode !== "inactive" && mode !== "active") return { ok: false, message: "잘못된 요청입니다." };
   return { ok: true, data: { productId, active: mode === "active" } };
+}
+
+/** 바코드 등록 (코드 형식은 service에서 검증) */
+export function parseBarcodeAddForm(
+  fd: FormData
+): { ok: true; data: { productId: string; code: string; unit: BarcodeUnit } } | { ok: false; message: string } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const unit = text(fd, "unit");
+  if (!isBarcodeUnit(unit)) return { ok: false, message: "바코드 단위를 선택하세요." };
+  return { ok: true, data: { productId, code: normalizeBarcode(fd.get("code")), unit } };
+}
+
+/** 바코드 삭제 */
+export function parseBarcodeRemoveForm(fd: FormData): { ok: true; barcodeId: string } | { ok: false; message: string } {
+  const barcodeId = text(fd, "barcodeId");
+  if (!UUID_RE.test(barcodeId)) return { ok: false, message: "잘못된 바코드입니다." };
+  return { ok: true, barcodeId };
 }

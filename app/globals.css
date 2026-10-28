@@ -210,3 +210,10 @@
     }
   }
 }
+/* 인쇄(바코드 라벨 등): 사이드바·헤더 숨김 */
+@media print {
+  aside,
+  body > div > header {
+    display: none !important;
+  }
+}

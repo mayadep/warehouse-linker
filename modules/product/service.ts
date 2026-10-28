@@ -5,7 +5,9 @@ import { productVersion, type ProductInput, type ProductUpdateInput } from "./va
 import { recordAudit } from "@/modules/audit/service";
 import type { CurrentUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
-import { STORAGE_TEMP_LABELS, type StorageTempCode } from "./storage";
+import { PICK_POLICY_LABELS, STORAGE_TEMP_LABELS, type PickPolicyCode, type StorageTempCode } from "./storage";
+import { BARCODE_UNIT_LABELS, MAX_BARCODES_PER_PRODUCT, normalizeBarcode, validateBarcode } from "./barcode";
+import type { BarcodeUnit } from "@prisma/client";
 
 export class DuplicateSkuError extends Error {
   constructor(sku: string) {
@@ -168,6 +170,7 @@ async function lockProduct(tx: Prisma.TransactionClient, productId: string) {
       boxQty: true,
       baseUnit: true,
       safetyStock: true,
+      pickPolicy: true,
       stock: true,
       status: true,
       locationId: true,
@@ -195,9 +198,11 @@ export async function updateProduct(input: ProductUpdateInput & { hasBoxQty: boo
       price: cur.status === "PENDING" ? cur.price : input.price,
       boxQty: cur.baseUnit === "BOX" ? 1 : input.hasBoxQty ? input.boxQty : cur.boxQty,
       safetyStock: input.safetyStock,
+      pickPolicy: input.pickPolicy,
     };
-    const labels = { name: "품명", category: "분류", storageTemp: "보관 온도", price: "판매가", boxQty: "박스당 입수", safetyStock: "안전재고" } as const;
-    const display = (k: keyof typeof labels, v: string | number) => (k === "storageTemp" ? STORAGE_TEMP_LABELS[v as StorageTempCode] : v);
+    const labels = { name: "품명", category: "분류", storageTemp: "보관 온도", price: "판매가", boxQty: "박스당 입수", safetyStock: "안전재고", pickPolicy: "출고 순서" } as const;
+    const display = (k: keyof typeof labels, v: string | number) =>
+      k === "storageTemp" ? STORAGE_TEMP_LABELS[v as StorageTempCode] : k === "pickPolicy" ? PICK_POLICY_LABELS[v as PickPolicyCode] : v;
     const changes: Record<string, { from: string | number; to: string | number }> = {};
     for (const k of Object.keys(labels) as (keyof typeof labels)[]) {
       if (cur[k] !== next[k]) changes[labels[k]] = { from: display(k, cur[k]), to: display(k, next[k]) };
@@ -300,6 +305,7 @@ export function activeProductSearchWhere(keyword?: string): Prisma.ProductWhereI
             { sku: { contains: k, mode: "insensitive" } },
             { name: { contains: k, mode: "insensitive" } },
             { category: { contains: k, mode: "insensitive" } },
+            { barcodes: { some: { code: k } } }, // 스캔값은 정확히 일치
           ],
         }
       : {}),
@@ -344,6 +350,7 @@ export async function listProducts(keyword?: string, includeInactive = false, pa
       storageTemp: true,
       boxQty: true,
       safetyStock: true,
+      pickPolicy: true,
       trackExpiry: true,
       status: true,
       createdBy: { select: { name: true } },
@@ -361,4 +368,79 @@ export async function listCategories() {
     orderBy: { category: "asc" },
   });
   return rows.map((r) => r.category);
+}
+
+
+export async function listBarcodes(productId: string) {
+  return prisma.productBarcode.findMany({
+    where: { productId },
+    select: { id: true, code: true, unit: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+/** 스캔한 바코드 → 상품·단위 (확정 상품만) */
+export async function findByBarcode(raw: string) {
+  const code = normalizeBarcode(raw);
+  if (!code) return null;
+  const b = await prisma.productBarcode.findUnique({
+    where: { code },
+    select: { unit: true, product: { select: { id: true, sku: true, name: true, status: true } } },
+  });
+  if (!b || b.product.status !== "ACTIVE") return null;
+  return { productId: b.product.id, sku: b.product.sku, name: b.product.name, unit: b.unit };
+}
+
+/** 바코드 등록 (관리자): 코드는 전체에서 유일, 상품당 최대 개수 제한 */
+export async function addBarcode(input: { productId: string; code: string; unit: BarcodeUnit }) {
+  const code = normalizeBarcode(input.code);
+  const invalid = validateBarcode(code);
+  if (invalid) throw new ProductError(invalid);
+  return prisma.$transaction(async (tx) => {
+    const cur = await lockProduct(tx, input.productId);
+    if (cur.status === "INACTIVE") throw new ProductError(`[${cur.sku}] ${cur.name}은(는) 비활성 상품입니다.`);
+    if (input.unit === "BOX" && (cur.baseUnit === "BOX" || cur.boxQty <= 1)) {
+      throw new ProductError("박스 바코드는 박스당 입수가 2 이상인 상품에만 등록할 수 있습니다.");
+    }
+    const dup = await tx.productBarcode.findUnique({
+      where: { code },
+      select: { product: { select: { sku: true, name: true } } },
+    });
+    if (dup) throw new ProductError(`이미 등록된 바코드입니다: ${code} → [${dup.product.sku}] ${dup.product.name}`);
+    const count = await tx.productBarcode.count({ where: { productId: cur.id } });
+    if (count >= MAX_BARCODES_PER_PRODUCT) {
+      throw new ProductError(`바코드는 상품당 최대 ${MAX_BARCODES_PER_PRODUCT}개까지 등록할 수 있습니다.`);
+    }
+    await tx.productBarcode.create({ data: { productId: cur.id, code, unit: input.unit } });
+    await recordAudit(tx, {
+      category: "PRODUCT",
+      action: "PRODUCT_BARCODE_ADD",
+      targetId: cur.id,
+      targetLabel: `[${cur.sku}] ${cur.name}`,
+      summary: `바코드 등록: [${cur.sku}] ${cur.name} (${BARCODE_UNIT_LABELS[input.unit]} ${code})`,
+      detail: { 바코드: { from: "", to: code } },
+    });
+    return { sku: cur.sku, name: cur.name };
+  });
+}
+
+/** 바코드 삭제 (관리자) */
+export async function removeBarcode(barcodeId: string) {
+  return prisma.$transaction(async (tx) => {
+    const b = await tx.productBarcode.findUnique({
+      where: { id: barcodeId },
+      select: { id: true, code: true, unit: true, product: { select: { id: true, sku: true, name: true } } },
+    });
+    if (!b) throw new ProductError("이미 삭제된 바코드입니다. 새로고침 후 확인하세요.");
+    await tx.productBarcode.delete({ where: { id: b.id } });
+    await recordAudit(tx, {
+      category: "PRODUCT",
+      action: "PRODUCT_BARCODE_REMOVE",
+      targetId: b.product.id,
+      targetLabel: `[${b.product.sku}] ${b.product.name}`,
+      summary: `바코드 삭제: [${b.product.sku}] ${b.product.name} (${BARCODE_UNIT_LABELS[b.unit]} ${b.code})`,
+      detail: { 바코드: { from: b.code, to: "" } },
+    });
+    return { sku: b.product.sku, name: b.product.name };
+  });
 }

@@ -176,6 +176,37 @@
 - 서비스 `searchProductsForInbound`·`searchProductsForOutbound`(조건 `activeProductSearchWhere`, 검색어 정리 `normalizeProductKeyword` — modules/product/service.ts). 출고는 판매가를 `price.view` 권한이 있을 때만 내려줌
 - 화면: 고른 상품은 검색어를 바꿔도 유지, 결과가 20개를 넘으면 안내 문구 표시
 
+## 바코드 (modules/product/barcode.ts) — 2026-10-28, 마이그레이션 `product_barcode`
+- `ProductBarcode(productId, code unique, unit BASE|BOX)`: 상품당 최대 10개, 코드는 전체 유일. 낱개·박스 바코드를 따로 둔다.
+- 형식: 영숫자 `-._` 4~40자. 숫자 8/12/13/14자리는 GS1 체크디지트 검증. 박스 바코드는 박스당 입수 2 이상인 상품만.
+- 등록·삭제는 관리자(`product.manage`), 상품 등록 화면 [바코드] 창. 감사로그 `PRODUCT_BARCODE_ADD/REMOVE`.
+- 입고·출고 폼 검색창: USB 스캐너(키보드 입력 + Enter)나 [카메라 스캔]으로 입력하면 `lookupBarcodeAction`으로 상품을 찾아 자동 선택, 박스 바코드면 박스 단위로 선택. 상품 검색은 바코드 정확 일치도 포함.
+- 카메라 스캔(`components/BarcodeScanButton`): `BarcodeDetector` 우선, 미지원 브라우저는 `@zxing/browser` 폴백. HTTPS 또는 localhost 필요.
+- 라벨 출력 `/products/labels`(관리자): 상품 바코드·위치코드(Code128) 라벨을 `bwip-js`로 SVG 생성해 인쇄.
+
+## 로트번호 · FEFO · 로트 추적 — 2026-10-28, 마이그레이션 `lot_no_fefo`
+- 로트번호: `Inbound.lotNo`(선택, 30자, 영문·숫자·`-._/`)를 입고 등록 때만 입력(등록 후 수정 불가, 틀리면 취소 후 재등록). `StockBalance`/`StockMovement`에 `lotNo` 추가, 칸 유일키는 (상품, 위치, 유통기한, 입고일, 로트번호) NULLS NOT DISTINCT.
+- 칸 합치기 규칙: 같은 로트번호끼리만 한 칸으로 합친다. 번호 없는 입고는 기존처럼 입고일 기준. 기존 재고는 로트 미지정(null).
+- 로트번호는 입고 확정·정정·취소·출고취소 복원·위치이동·유통기한 변경에서 그대로 따라간다(`changeStock`/`transferBucket`).
+- 출고 순서 `Product.pickPolicy`(FIFO 기본 / FEFO): FEFO는 유통기한을 아는 재고를 빠른 순으로 먼저, 유통기한 미상은 뒤로, 같으면 입고일순. 관리자가 상품 수정에서 변경(`productVersion`에 포함).
+- 로트 추적 `/stock/lots`(재고 조회 권한): 로트번호 정확 일치(대소문자 무시)로 현재 남은 재고, 입고·출고·정정·취소 이력(거래처 포함, 최근 200건).
+
+## 재고 실사 (modules/cyclecount) — 2026-10-28, 마이그레이션 `cycle_count`
+- 모델: `CycleCount`(실사번호 CC-YYMMDD-NNN, 상태 COUNTING→CONFIRMED|CANCELLED, version) + `CycleCountLine`(상품×위치×유통기한×입고일×로트, `bookQty` 스냅샷, `countedQty`, `appliedDelta`). CHECK: bookQty>=0, countedQty>=0.
+- 권한: `count.manage`(입출고 담당·관리자: 생성·수량 입력·발견분·취소), `count.confirm`(관리자: 확정).
+- 흐름: 창고 또는 위치코드 앞부분(랙 단위)으로 범위 지정 → 범위 안 `StockBalance`를 스냅샷(한 장 최대 3,000줄) → 칸별 실사 수량 입력(줄 단위 저장, 위치·상품 스캔으로 필터) → 확정.
+- 확정(한 트랜잭션): 센 줄만 반영, 증감 = 실사 수량 − **확정 시점** 칸 재고(실사표를 뜬 뒤 입출고가 있어도 실재고에 맞춤). 재고조정(`COUNT_PLUS/MINUS`, 메모에 실사번호) + `changeStock(..., lot)`로 해당 로트만 증감. 못 센 줄은 반영하지 않음. 취소는 재고 변동 없음.
+- 발견분: 실사표에 없던 재고를 상품코드/바코드+위치코드로 추가(장부 0, 로트 미지정).
+- `changeStock`에 `lot`(입고일+로트번호) 인자 추가: strict 감소는 그 로트에서만, 입고·출고 무관 증가는 그 로트로 넣는다.
+- 중복·동시성: 생성은 `requestId`, 확정·취소는 `version` 조건부 UPDATE. 감사로그 `CYCLE_COUNT_CREATE/CONFIRM/CANCEL`.
+
+## 모바일/PWA 현장 화면 (app/m) — 2026-10-28
+- 설치: `app/manifest.ts`(시작 `/m`, standalone), 아이콘 `/pwa-icon/192|512`(next/og 생성), `public/sw.js`(설치·오프라인 안내만, **재고·주문 데이터는 캐시하지 않음**), `public/offline.html`. `proxy.ts`는 이 PWA 파일만 로그인 없이 허용.
+- 레이아웃: `proxy.ts`가 `x-pathname` 헤더를 넘기고, 루트 레이아웃은 `/m`, `/m/*` 에서 사이드바·헤더를 빼고 `app/m/layout.tsx`(상단 홈 + 사용자명)로 표시.
+- 화면: `/m` 허브(권한별 메뉴), `/m/lookup` 재고 조회(바코드·상품코드·품명·위치코드 → 칸별 재고, `mobileLookupAction`, `stock.view`), `/m/inbound`·`/m/outbound` (PC 입출고 폼 재사용, 스캔 선택·로트번호 포함, 폼은 1열로 표시), `/m/count`·`/m/count/[id]` 실사(위치·상품 스캔 필터, 카드별 수량 입력·[일치] 버튼, 확정은 PC에서 관리자).
+- 모든 권한 검사는 기존대로 페이지(`requirePageUser`+`can`)와 Server Action(`authorize`)에서 서버가 한다.
+- 인쇄 시 사이드바·헤더는 숨김(`globals.css` print).
+
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
 2. 유사 건 경고: 최근 10분 내 같은 상품·거래처·수량이 있으면 status "confirm" 반환(저장 안 함) → [그래도 등록](confirmDuplicate=1) 시 저장

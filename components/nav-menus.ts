@@ -14,6 +14,7 @@ const menuGroups: MenuGroup[] = [
       { label: "입고", href: "/inbound", perm: "inbound.view" },
       { label: "출고", href: "/outbound", perm: "outbound.view" },
       { label: "재고현황", href: "/stock", perm: "stock.view" },
+      { label: "재고실사", href: "/counts", perm: "count.manage" },
       { label: "창고관리", href: "/warehouses", perm: "admin" },
     ],
   },

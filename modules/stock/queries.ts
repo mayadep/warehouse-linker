@@ -306,3 +306,42 @@ export async function listProductBalances(productId: string) {
       (a.location?.code ?? "").localeCompare(b.location?.code ?? "")
   );
 }
+
+export const LOT_TRACE_LIMIT = 200;
+
+/**
+ * 로트 추적: 로트번호(대소문자 무시, 정확히 일치)의 입고·출고 이력과 현재 남은 재고.
+ * 회수·클레임 때 '어느 공급처에서 들어와 어느 출고처로 나갔는지' 확인하는 용도
+ */
+export async function traceLot(lotNo: string) {
+  const lot = { equals: lotNo, mode: "insensitive" } as const;
+  const [movements, balances] = await Promise.all([
+    prisma.stockMovement.findMany({
+      where: { lotNo: lot, type: { in: ["INBOUND", "OUTBOUND", "INBOUND_CORRECTION", "OUTBOUND_CORRECTION", "INBOUND_CANCEL", "OUTBOUND_CANCEL", "ADJUST"] } },
+      orderBy: { createdAt: "desc" },
+      take: LOT_TRACE_LIMIT,
+      select: {
+        id: true,
+        type: true,
+        quantity: true,
+        createdAt: true,
+        product: { select: { sku: true, name: true } },
+        location: { select: { code: true } },
+        inbound: { select: { partner: { select: { name: true } } } },
+        outbound: { select: { partner: { select: { name: true } } } },
+      },
+    }),
+    prisma.stockBalance.findMany({
+      where: { lotNo: lot },
+      orderBy: [{ expiryDate: "asc" }],
+      select: {
+        id: true,
+        quantity: true,
+        expiryDate: true,
+        product: { select: { sku: true, name: true } },
+        location: { select: { code: true } },
+      },
+    }),
+  ]);
+  return { movements, balances };
+}
