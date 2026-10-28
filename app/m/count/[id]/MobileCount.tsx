@@ -18,6 +18,7 @@ type Line = {
   bookQty: number;
   currentQty: number | null;
   countedQty: number | null;
+  expectedDelta: number | null;
 };
 
 const initialState: CountActionState = { status: "idle", message: "" };
@@ -111,7 +112,7 @@ export default function MobileCount({ lines }: { lines: Line[] }) {
         {visible.slice(0, PAGE).map((l) => {
           const raw = rawOf(l);
           const base = l.currentQty ?? l.bookQty;
-          const diff = raw === "" ? null : Number(raw) - base;
+          const diff = raw === "" ? null : l.expectedDelta !== null && raw === String(l.countedQty) ? l.expectedDelta : Number(raw) - base;
           return (
             <li key={l.id} className="rounded-xl border bg-card p-4">
               <div className="text-sm font-semibold text-primary">{l.locationCode ?? "위치 미지정"}</div>

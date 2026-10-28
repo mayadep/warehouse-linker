@@ -3,7 +3,7 @@
 // 현장(모바일) 재고 조회: 바코드·상품코드·품명·위치코드 하나로 조회
 import { prisma } from "@/lib/prisma";
 import { dbToDateOnly } from "@/lib/datetime";
-import { authorize } from "@/modules/user/auth";
+import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 
 export type LookupBalance = {
   locationCode: string | null;
@@ -43,7 +43,7 @@ const productSelect = {
 /** 입력값 판별: 위치코드 정확 일치 → 바코드 정확 일치 → 상품코드 → 품명·코드 부분 일치 */
 export async function mobileLookupAction(raw: string): Promise<LookupResult> {
   const user = await authorize("stock.view");
-  if (!user) return { ok: false, message: "권한이 없습니다. 로그인 상태와 계정 권한을 확인하세요." };
+  if (!user) return { ok: false, message: NO_PERMISSION_MESSAGE };
   const q = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim().slice(0, 50) : "";
   if (!q) return { ok: false, message: "바코드, 상품코드, 품명, 위치코드 중 하나를 입력하거나 스캔하세요." };
 
@@ -71,8 +71,8 @@ export async function mobileLookupAction(raw: string): Promise<LookupResult> {
       orderBy: { sku: "asc" },
     });
   } else {
-    const byBarcode = await prisma.productBarcode.findUnique({ where: { code: compact }, select: { product: { select: productSelect } } });
-    if (byBarcode) {
+    const byBarcode = await prisma.productBarcode.findUnique({ where: { code: compact }, select: { product: { select: { ...productSelect, status: true } } } });
+    if (byBarcode && byBarcode.product.status === "ACTIVE") {
       products = [byBarcode.product];
       title = `[${byBarcode.product.sku}] ${byBarcode.product.name}`;
     } else {

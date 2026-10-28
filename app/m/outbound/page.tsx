@@ -4,7 +4,7 @@ import { requirePageUser } from "@/modules/user/auth";
 import { can } from "@/modules/user/codes";
 import { searchProductsForOutbound } from "@/modules/outbound/service";
 import { listPartnerOptions } from "@/modules/partner/service";
-import OutboundForm from "@/app/outbound/OutboundForm";
+import OutboundForm from "@/app/(pc)/outbound/OutboundForm";
 
 /** 현장 출고 등록: PC 출고 폼(스캔 선택 포함)을 그대로 쓴다. 내역 표는 PC 화면에서 확인 */
 export default async function MobileOutboundPage() {

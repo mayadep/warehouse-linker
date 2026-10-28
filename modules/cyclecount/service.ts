@@ -13,8 +13,53 @@ export class CountError extends Error {}
 
 const kstYymmdd = () => todayKst().replaceAll("-", "").slice(2);
 
-/** 실사표 생성: 범위의 칸 재고를 스냅샷으로 뜬다. 같은 requestId 는 1장만 */
-export async function createCycleCount(input: CountCreateInput, actor: CurrentUser) {
+export type CountOverlap = { id: string; countNo: string; createdByName: string | null; lines: number };
+
+type OverlapKey = { productId: string; locationId: string | null; expiryDate: Date | null; lotDate: Date | null; lotNo: string | null };
+
+/**
+ * 같은 칸(상품·위치·유통기한·입고일·로트)을 세는 다른 진행 중 실사표. 경고용이며 막지는 않는다.
+ * 같은 칸을 두 곳에서 따로 세면 확정 결과가 나중 확정에 좌우되므로, 담당자끼리 조율하도록 알려 준다
+ */
+async function findOverlaps(
+  db: Pick<Prisma.TransactionClient, "cycleCountLine">,
+  keys: OverlapKey[],
+  excludeCountId?: string
+): Promise<CountOverlap[]> {
+  if (keys.length === 0) return [];
+  const locationIds = [...new Set(keys.flatMap((k) => (k.locationId ? [k.locationId] : [])))];
+  const hasNoLocation = keys.some((k) => k.locationId === null);
+  const others = await db.cycleCountLine.findMany({
+    where: {
+      count: { status: "COUNTING", ...(excludeCountId ? { id: { not: excludeCountId } } : {}) },
+      OR: [{ locationId: { in: locationIds } }, ...(hasNoLocation ? [{ locationId: null }] : [])],
+    },
+    select: {
+      countId: true,
+      productId: true,
+      locationId: true,
+      expiryDate: true,
+      lotDate: true,
+      lotNo: true,
+      count: { select: { countNo: true, createdBy: { select: { name: true } } } },
+    },
+  });
+  const mine = new Set(keys.map((k) => balanceKey(k.productId, k.locationId, k.expiryDate, k.lotDate, k.lotNo)));
+  const byCount = new Map<string, CountOverlap>();
+  for (const o of others) {
+    if (!mine.has(balanceKey(o.productId, o.locationId, o.expiryDate, o.lotDate, o.lotNo))) continue;
+    const cur = byCount.get(o.countId);
+    if (cur) cur.lines++;
+    else byCount.set(o.countId, { id: o.countId, countNo: o.count.countNo, createdByName: o.count.createdBy?.name ?? null, lines: 1 });
+  }
+  return [...byCount.values()].sort((a, b) => a.countNo.localeCompare(b.countNo));
+}
+
+/** 실사표 생성: 범위의 칸 재고를 스냅샷으로 뜬다. 같은 requestId 는 1장만. 겹치는 진행 중 실사표가 있으면 확인(confirmOverlap)을 요구 */
+export async function createCycleCount(
+  input: CountCreateInput,
+  actor: CurrentUser
+): Promise<{ id: string; duplicated: boolean; overlaps?: undefined } | { overlaps: CountOverlap[] }> {
   const dup = await prisma.cycleCount.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
   if (dup) return { id: dup.id, duplicated: true };
 
@@ -38,6 +83,10 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
       `실사표는 한 장에 ${COUNT_LIMITS.maxLines.toLocaleString()}줄까지 만들 수 있습니다. 위치코드 앞부분(랙 단위)으로 범위를 좁히세요.`
     );
   }
+  if (!input.confirmOverlap) {
+    const overlaps = await findOverlaps(prisma, balances);
+    if (overlaps.length > 0) return { overlaps };
+  }
   const scope = [warehouse?.name, input.locationPrefix].filter(Boolean).join(" · ").slice(0, COUNT_LIMITS.maxScope);
 
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -51,6 +100,8 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
               countNo: `${prefix}${String(seq).padStart(3, "0")}`,
               requestId: input.requestId,
               scope,
+              warehouseId: input.warehouseId,
+              locationPrefix: input.locationPrefix || null,
               memo: input.memo,
               createdById: actor.id,
             },
@@ -82,6 +133,10 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
       // 실사번호 충돌(동시 생성)은 번호를 올려 다시 시도
       const err = e as { code?: string; meta?: { target?: unknown } };
       if (err.code === "P2002" && String(err.meta?.target).includes("countNo")) continue;
+      if (err.code === "P2002" && String(err.meta?.target).includes("requestId")) {
+        const again = await prisma.cycleCount.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+        if (again) return { id: again.id, duplicated: true };
+      }
       throw e;
     }
   }
@@ -114,6 +169,35 @@ export async function listCycleCounts() {
 const balanceKey = (productId: string, locationId: string | null, exp: Date | null, lot: Date | null, lotNo: string | null) =>
   [productId, locationId ?? "", exp?.getTime() ?? "", lot?.getTime() ?? "", lotNo ?? ""].join("|");
 
+type KeyedLine = { productId: string; locationId: string | null; expiryDate: Date | null; lotDate: Date | null; lotNo: string | null };
+type AfterMovement = KeyedLine & { quantity: number; createdAt: Date };
+
+/** 센 시각 이후 해당 상품들의 재고 변동 (입고·출고·이동·조정 모두, 칸·로트별 부호 있는 수량) */
+async function movementsSince(
+  db: Pick<Prisma.TransactionClient, "stockMovement">,
+  productIds: string[],
+  since: Date
+): Promise<AfterMovement[]> {
+  if (productIds.length === 0) return [];
+  return db.stockMovement.findMany({
+    where: { productId: { in: productIds }, createdAt: { gt: since } },
+    select: { productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, quantity: true, createdAt: true },
+  });
+}
+
+/**
+ * 센 시각의 칸 재고 = 지금 칸 재고 − 센 시각 이후의 그 칸·로트 변동 합.
+ * 실사 증감 = 실사 수량 − 센 시각의 칸 재고 (센 뒤에 실제로 나간 출고 등은 그대로 둔다)
+ */
+function stockAtCountTime(line: KeyedLine, current: number, countedAt: Date, after: AfterMovement[]): number {
+  const k = balanceKey(line.productId, line.locationId, line.expiryDate, line.lotDate, line.lotNo);
+  let moved = 0;
+  for (const m of after) {
+    if (m.createdAt > countedAt && balanceKey(m.productId, m.locationId, m.expiryDate, m.lotDate, m.lotNo) === k) moved += m.quantity;
+  }
+  return Math.max(0, current - moved);
+}
+
 export async function getCycleCount(id: string) {
   const count = await prisma.cycleCount.findUnique({
     where: { id },
@@ -142,6 +226,7 @@ export async function getCycleCount(id: string) {
       lotNo: true,
       bookQty: true,
       countedQty: true,
+      countedAt: true,
       appliedDelta: true,
       product: { select: { sku: true, name: true, baseUnit: true } },
       location: { select: { code: true } },
@@ -150,15 +235,26 @@ export async function getCycleCount(id: string) {
   });
   // 진행 중이면 현재 장부 수량도 함께 (실사표를 뜬 뒤 입출고로 달라졌는지 표시)
   let current = new Map<string, number>();
+  let after: AfterMovement[] = [];
   if (count.status === "COUNTING") {
+    const sinceTimes = lines.flatMap((l) => (l.countedAt ? [l.countedAt.getTime()] : []));
+    if (sinceTimes.length > 0) {
+      after = await movementsSince(
+        prisma,
+        [...new Set(lines.filter((l) => l.countedAt).map((l) => l.productId))],
+        new Date(Math.min(...sinceTimes))
+      );
+    }
     const bals = await prisma.stockBalance.findMany({
       where: { productId: { in: [...new Set(lines.map((l) => l.productId))] } },
       select: { productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, quantity: true },
     });
     current = new Map(bals.map((b) => [balanceKey(b.productId, b.locationId, b.expiryDate, b.lotDate, b.lotNo), b.quantity]));
   }
+  const overlaps = count.status === "COUNTING" ? await findOverlaps(prisma, lines, id) : [];
   return {
     count,
+    overlaps,
     lines: lines.map((l) => ({
       id: l.id,
       sku: l.product.sku,
@@ -173,12 +269,25 @@ export async function getCycleCount(id: string) {
           ? (current.get(balanceKey(l.productId, l.locationId, l.expiryDate, l.lotDate, l.lotNo)) ?? 0)
           : null,
       countedQty: l.countedQty,
+      // 진행 중: 확정하면 실제로 반영될 증감 (센 시각 기준). 아직 안 셌으면 null
+      expectedDelta:
+        count.status === "COUNTING" && l.countedQty !== null && l.countedAt
+          ? l.countedQty -
+            stockAtCountTime(
+              l,
+              current.get(balanceKey(l.productId, l.locationId, l.expiryDate, l.lotDate, l.lotNo)) ?? 0,
+              l.countedAt,
+              after
+            )
+          : null,
       appliedDelta: l.appliedDelta,
     })),
   };
 }
 
 async function requireCounting(tx: Prisma.TransactionClient, countId: string) {
+  // 공유 잠금: 확정·취소(UPDATE)가 진행 중이면 끝날 때까지 기다린 뒤 최신 상태를 읽는다
+  await tx.$queryRaw`SELECT "id" FROM "CycleCount" WHERE "id" = ${countId} FOR SHARE`;
   const c = await tx.cycleCount.findUnique({ where: { id: countId }, select: { id: true, countNo: true, status: true } });
   if (!c) throw new CountError("존재하지 않는 실사표입니다.");
   if (c.status !== "COUNTING") {
@@ -207,8 +316,12 @@ export async function saveCount(input: { lineId: string; countedQty: number | nu
 export async function addFoundLine(input: CountFoundInput, actor: CurrentUser) {
   return prisma.$transaction(async (tx) => {
     const c = await requireCounting(tx, input.countId);
+    const range = await tx.cycleCount.findUniqueOrThrow({
+      where: { id: c.id },
+      select: { scope: true, warehouseId: true, locationPrefix: true },
+    });
     const [location, bySku, byBarcode] = await Promise.all([
-      tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true } }),
+      tx.location.findUnique({ where: { code: input.locationCode }, select: { id: true, code: true, warehouseId: true } }),
       tx.product.findUnique({ where: { sku: input.productKey.toUpperCase() }, select: { id: true, sku: true, name: true, status: true } }),
       tx.productBarcode.findUnique({
         where: { code: input.productKey },
@@ -219,6 +332,13 @@ export async function addFoundLine(input: CountFoundInput, actor: CurrentUser) {
     if (!product) throw new CountError(`상품을 찾을 수 없습니다: ${input.productKey} (상품코드 또는 등록된 바코드)`);
     if (!location) throw new CountError(`존재하지 않는 위치코드입니다: ${input.locationCode}`);
     if (!product || product.status !== "ACTIVE") throw new CountError("확정된 상품만 추가할 수 있습니다.");
+    // 발견분 위치는 실사표의 범위(창고·위치코드 앞부분) 안이어야 한다 (범위 밖 칸의 재고를 덮어쓰지 않도록)
+    if (
+      (range.warehouseId && location.warehouseId !== range.warehouseId) ||
+      (range.locationPrefix && !location.code.startsWith(range.locationPrefix))
+    ) {
+      throw new CountError(`${location.code}은(는) 이 실사표의 범위(${range.scope}) 밖입니다. 범위 안의 위치코드를 입력하세요.`);
+    }
     const inactive = await inactiveLocationMessage(tx, location.id);
     if (inactive) throw new CountError(inactive);
     const expiry = input.expiryDate ? dateOnlyToDb(input.expiryDate) : null;
@@ -256,13 +376,26 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
 
       const lines = await tx.cycleCountLine.findMany({
         where: { countId: input.countId },
-        select: { id: true, productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, countedQty: true },
+        select: { id: true, productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, countedQty: true, countedAt: true },
         orderBy: [{ productId: "asc" }, { id: "asc" }], // 상품 순서 고정 (동시 작업과의 교착 방지)
       });
+      // 칸 재고를 읽기 전에 대상 상품을 id 순으로 모두 잠근다 → 읽은 값 이후 출고·입고가 끼어들지 못함
+      const productIds = [...new Set(lines.filter((l) => l.countedQty !== null).map((l) => l.productId))].sort();
+      if (productIds.length > 0) {
+        await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" = ANY(${productIds}::text[]) ORDER BY "id" FOR UPDATE`;
+      }
+      // 센 시각 이후의 변동은 반영 전에 한 번에 읽는다 (이 확정이 만드는 조정은 포함되지 않게)
+      const counted = lines.filter((l) => l.countedQty !== null && l.countedAt);
+      const after = await movementsSince(
+        tx,
+        productIds,
+        counted.length > 0 ? new Date(Math.min(...counted.map((l) => l.countedAt!.getTime()))) : new Date()
+      );
       let plus = 0;
       let minus = 0;
       let adjusted = 0;
       let skipped = 0;
+      let clamped = 0;
       for (const l of lines) {
         if (l.countedQty === null) {
           skipped++;
@@ -272,7 +405,13 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
           where: { productId: l.productId, locationId: l.locationId, expiryDate: l.expiryDate, lotDate: l.lotDate, lotNo: l.lotNo },
           select: { quantity: true },
         });
-        const delta = l.countedQty - (cur?.quantity ?? 0);
+        const have = cur?.quantity ?? 0;
+        let delta = l.countedQty - stockAtCountTime(l, have, l.countedAt ?? new Date(0), after);
+        // 센 뒤에 재고가 이미 줄어 지금 칸 재고보다 많이 뺄 수는 없다 (있는 만큼만)
+        if (delta < -have) {
+          delta = -have;
+          clamped++;
+        }
         await tx.cycleCountLine.update({ where: { id: l.id }, data: { appliedDelta: delta } });
         if (delta === 0) continue;
         if (delta > 0 && l.locationId) {
@@ -307,7 +446,7 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
         targetId: input.countId,
         targetLabel: count.countNo,
         summary: `재고 실사 확정: ${count.countNo} (조정 ${adjusted.toLocaleString()}줄, +${plus.toLocaleString()} / -${minus.toLocaleString()}, 미실사 ${skipped.toLocaleString()}줄)`,
-        detail: { adjusted, plus, minus, skipped },
+        detail: { adjusted, plus, minus, skipped, clamped },
       });
       return { countNo: count.countNo, adjusted, plus, minus, skipped };
     },

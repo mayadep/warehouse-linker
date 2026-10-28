@@ -195,14 +195,17 @@
 - 모델: `CycleCount`(실사번호 CC-YYMMDD-NNN, 상태 COUNTING→CONFIRMED|CANCELLED, version) + `CycleCountLine`(상품×위치×유통기한×입고일×로트, `bookQty` 스냅샷, `countedQty`, `appliedDelta`). CHECK: bookQty>=0, countedQty>=0.
 - 권한: `count.manage`(입출고 담당·관리자: 생성·수량 입력·발견분·취소), `count.confirm`(관리자: 확정).
 - 흐름: 창고 또는 위치코드 앞부분(랙 단위)으로 범위 지정 → 범위 안 `StockBalance`를 스냅샷(한 장 최대 3,000줄) → 칸별 실사 수량 입력(줄 단위 저장, 위치·상품 스캔으로 필터) → 확정.
-- 확정(한 트랜잭션): 센 줄만 반영, 증감 = 실사 수량 − **확정 시점** 칸 재고(실사표를 뜬 뒤 입출고가 있어도 실재고에 맞춤). 재고조정(`COUNT_PLUS/MINUS`, 메모에 실사번호) + `changeStock(..., lot)`로 해당 로트만 증감. 못 센 줄은 반영하지 않음. 취소는 재고 변동 없음.
+- 확정(한 트랜잭션): 센 줄만 반영, 증감 = 실사 수량 − **센 시각의 칸 재고**. 센 시각의 칸 재고 = 확정 시점 칸 재고 − 센 시각(`countedAt`) 이후의 그 칸·로트 `StockMovement` 합. 센 뒤에 실제로 나간 출고·이동은 그대로 두고, 센 뒤 재고가 이미 줄어 지금 칸 재고보다 많이 빼야 하면 있는 만큼만 뺀다(감사로그 detail `clamped`). 진행 중 화면의 '차이'도 같은 기준(`expectedDelta`). 재고조정(`COUNT_PLUS/MINUS`, 메모에 실사번호) + `changeStock(..., lot)`로 해당 로트만 증감. 못 센 줄은 반영하지 않음. 취소는 재고 변동 없음.
 - 발견분: 실사표에 없던 재고를 상품코드/바코드+위치코드로 추가(장부 0, 로트 미지정).
 - `changeStock`에 `lot`(입고일+로트번호) 인자 추가: strict 감소는 그 로트에서만, 입고·출고 무관 증가는 그 로트로 넣는다.
 - 중복·동시성: 생성은 `requestId`, 확정·취소는 `version` 조건부 UPDATE. 감사로그 `CYCLE_COUNT_CREATE/CONFIRM/CANCEL`.
+- 동시성 보강(리뷰 반영): 확정은 센 줄의 상품을 id 순으로 한꺼번에 `FOR UPDATE` 잠근 뒤 칸 재고를 읽는다. 수량 입력·발견분·취소는 실사표 헤더를 `FOR SHARE`로 읽어 확정 진행 중이면 기다린 뒤 최신 상태로 거부한다. 같은 requestId 동시 생성은 기존 실사표를 돌려준다.
+- 범위 구조화(마이그레이션 `cycle_count_scope`): `CycleCount.warehouseId`·`locationPrefix`를 저장하고, 발견분 추가 때 위치가 그 창고·위치코드 앞부분 안인지 서버가 검증한다(범위 밖이면 거부). 이 마이그레이션 이전에 만든 실사표는 값이 null이라 검증하지 않는다.
+- 겹침 경고(막지 않음): 같은 칸(상품·위치·유통기한·입고일·로트)을 세는 다른 진행 중(COUNTING) 실사표가 있으면 ① 생성 때 겹치는 실사표 번호·담당자·줄 수를 보여주고 `그래도 만들기`로 확인(`confirmOverlap`) ② 실사표 화면 상단 배너 ③ 확정 창 안내를 보여준다. 담당자끼리 조율해 한쪽을 취소하거나 범위를 나누는 운영을 전제로 하며, 서버가 생성·확정을 막지는 않는다(같은 칸을 따로 세면 나중에 확정한 쪽이 결과를 좌우함). 로트번호는 입고 때 대문자로 정규화한다.
 
 ## 모바일/PWA 현장 화면 (app/m) — 2026-10-28
 - 설치: `app/manifest.ts`(시작 `/m`, standalone), 아이콘 `/pwa-icon/192|512`(next/og 생성), `public/sw.js`(설치·오프라인 안내만, **재고·주문 데이터는 캐시하지 않음**), `public/offline.html`. `proxy.ts`는 이 PWA 파일만 로그인 없이 허용.
-- 레이아웃: `proxy.ts`가 `x-pathname` 헤더를 넘기고, 루트 레이아웃은 `/m`, `/m/*` 에서 사이드바·헤더를 빼고 `app/m/layout.tsx`(상단 홈 + 사용자명)로 표시.
+- 레이아웃(라우트 그룹): 루트 `app/layout.tsx`는 html·body·폰트만. PC 업무 화면은 `app/(pc)/`(사이드바+헤더+헤더 알림 조회는 `app/(pc)/layout.tsx`), 모바일은 `app/m/layout.tsx`(상단 홈 + 사용자명), 로그인은 틀 없음. 그룹 폴더는 URL에 나타나지 않는다. PC↔모바일 이동은 같은 루트 레이아웃 안이라 일반 `<Link>`로 된다. `/m`은 PC용 알림 조회(재고 부족·유통기한)를 하지 않는다.
 - 화면: `/m` 허브(권한별 메뉴), `/m/lookup` 재고 조회(바코드·상품코드·품명·위치코드 → 칸별 재고, `mobileLookupAction`, `stock.view`), `/m/inbound`·`/m/outbound` (PC 입출고 폼 재사용, 스캔 선택·로트번호 포함, 폼은 1열로 표시), `/m/count`·`/m/count/[id]` 실사(위치·상품 스캔 필터, 카드별 수량 입력·[일치] 버튼, 확정은 PC에서 관리자).
 - 모든 권한 검사는 기존대로 페이지(`requirePageUser`+`can`)와 Server Action(`authorize`)에서 서버가 한다.
 - 인쇄 시 사이드바·헤더는 숨김(`globals.css` print).

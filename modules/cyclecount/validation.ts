@@ -1,10 +1,17 @@
 // 재고 실사 입력값 검증 (서버에서 반드시 실행)
-import { INT_RE, UUID_RE, parseOptionalDate, parseOptionalText, parseRequestId, parseVersion, text } from "@/lib/form";
+import { INT_RE, UUID_RE, parseConfirm, parseOptionalDate, parseOptionalText, parseRequestId, parseVersion, text } from "@/lib/form";
 import { COUNT_LIMITS } from "./codes";
 
 type Fail = { ok: false; message: string };
 
-export type CountCreateInput = { requestId: string; warehouseId: string | null; locationPrefix: string; memo: string | null };
+export type CountCreateInput = {
+  requestId: string;
+  warehouseId: string | null;
+  locationPrefix: string;
+  memo: string | null;
+  /** 같은 칸을 세는 다른 진행 중 실사표가 있다는 경고를 확인하고 그래도 만든다 */
+  confirmOverlap: boolean;
+};
 
 /** 실사표 만들기: 창고 또는 위치코드 앞부분 중 하나 이상 필수 */
 export function parseCountCreateForm(fd: FormData): { ok: true; data: CountCreateInput } | Fail {
@@ -19,7 +26,10 @@ export function parseCountCreateForm(fd: FormData): { ok: true; data: CountCreat
   if (!warehouseId && !locationPrefix) return { ok: false, message: "창고를 고르거나 위치코드 앞부분을 입력하세요." };
   const memo = parseOptionalText(fd, "memo", "메모", COUNT_LIMITS.maxMemo);
   if (memo.error) return { ok: false, message: memo.error };
-  return { ok: true, data: { requestId: requestId.value, warehouseId: warehouseId || null, locationPrefix, memo: memo.value } };
+  return {
+    ok: true,
+    data: { requestId: requestId.value, warehouseId: warehouseId || null, locationPrefix, memo: memo.value, confirmOverlap: parseConfirm(fd, "confirmOverlap") },
+  };
 }
 
 /** 실사 수량 입력 (빈 값 = 입력 취소) */

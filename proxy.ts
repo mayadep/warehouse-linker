@@ -12,10 +12,7 @@ export function proxy(request: NextRequest) {
   if (!request.cookies.has(SESSION_COOKIE)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  // 루트 레이아웃이 모바일 화면(/m)을 구분할 수 있도록 경로를 요청 헤더로 넘긴다
-  const headers = new Headers(request.headers);
-  headers.set("x-pathname", pathname);
-  return NextResponse.next({ request: { headers } });
+  return NextResponse.next();
 }
 
 export const config = {

@@ -112,7 +112,7 @@ export function parseInboundForm(fd: FormData, now = new Date()): ParseResult {
       memo: c.memo.value,
       receivedAt: c.receivedAt.value,
       expiryDate: expiryDate.value,
-      lotNo: lotNo.value?.replace(/\s+/g, "") || null,
+      lotNo: lotNo.value?.replace(/\s+/g, "").toUpperCase() || null,
       locationCode,
       requestId: requestId.value,
       confirmDuplicate: parseConfirm(fd),

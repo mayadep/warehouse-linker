@@ -17,7 +17,7 @@ export default async function CountDetailPage({ params }: { params: Promise<{ id
   if (!UUID_RE.test(id)) notFound();
   const data = await getCycleCount(id);
   if (!data) notFound();
-  const { count, lines } = data;
+  const { count, lines, overlaps } = data;
 
   return (
     <div>
@@ -39,6 +39,7 @@ export default async function CountDetailPage({ params }: { params: Promise<{ id
           confirmedByName: count.confirmedBy?.name ?? null,
         }}
         lines={lines}
+        overlaps={overlaps}
         canConfirm={can(user.role, "count.confirm")}
       />
     </div>
