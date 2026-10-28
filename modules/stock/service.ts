@@ -35,6 +35,9 @@ export type StockBucket = { locationId: string | null; expiryDate: string | null
 
 const bucketKey = (b: StockBucket) => `${b.locationId ?? ""}|${b.expiryDate ?? ""}`;
 
+/** 로트 식별: 입고일 + 로트번호 (null = 미상/미지정) */
+export type LotId = { lotDate: string | null; lotNo: string | null };
+
 /** 칸 + 입고일(선입선출 기준, "YYYY-MM-DD", null = 미상) + 로트번호(null = 미지정) */
 type Lot = StockBucket & { lotDate: string | null; lotNo: string | null };
 
@@ -96,9 +99,13 @@ type Plan = { bucket: StockBucket; lotDate: string | null; lotNo: string | null;
 async function planIncrease(
   tx: Prisma.TransactionClient,
   product: { locationId: string | null },
-  args: { delta: number; bucket?: StockBucket; inboundId?: string; outboundId?: string }
+  args: { delta: number; bucket?: StockBucket; inboundId?: string; outboundId?: string; lot?: LotId }
 ): Promise<Plan> {
   const fallback: StockBucket = args.bucket ?? { locationId: product.locationId, expiryDate: null };
+  // 로트 지정(실사 등): 입고·출고와 무관하게 그 로트로 넣는다
+  if (args.lot && !args.inboundId && !args.outboundId) {
+    return [{ bucket: fallback, lotDate: args.lot.lotDate, lotNo: args.lot.lotNo, quantity: args.delta }];
+  }
   if (args.outboundId) {
     const taken = (await netByBucket(tx, { outboundId: args.outboundId }))
       .filter((b) => b.net < 0)
@@ -139,7 +146,7 @@ async function planDecrease(
   tx: Prisma.TransactionClient,
   productId: string,
   product: { locationId: string | null; pickPolicy: PickPolicy },
-  args: { delta: number; bucket?: StockBucket; strict?: boolean; inboundId?: string }
+  args: { delta: number; bucket?: StockBucket; strict?: boolean; inboundId?: string; lot?: LotId }
 ): Promise<Plan> {
   const balances = (
     await tx.stockBalance.findMany({
@@ -161,7 +168,9 @@ async function planDecrease(
   let pool = balances;
   if (args.strict && args.bucket) {
     const want = bucketKey(args.bucket);
-    pool = balances.filter((x) => bucketKey(x) === want);
+    pool = balances.filter(
+      (x) => bucketKey(x) === want && (!args.lot || (x.lotDate === args.lot.lotDate && x.lotNo === args.lot.lotNo))
+    );
     const have = pool.reduce((a, x) => a + x.quantity, 0);
     const need = -args.delta;
     if (have < need) {
@@ -258,6 +267,8 @@ export async function changeStock(
     bucket?: StockBucket;
     /** 줄일 때 bucket 칸에서만 (모자라면 BucketStockError). 출고 위치 지정용 */
     strict?: boolean;
+    /** 특정 로트(입고일+로트번호)만 증감 (실사용). strict 감소·입고/출고 무관 증가에 적용 */
+    lot?: LotId;
   }
 ) {
   const { productId, delta } = args;

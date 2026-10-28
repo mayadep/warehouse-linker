@@ -8,28 +8,28 @@ generator client {
 }
 
 model Product {
-  id          String   @id @default(uuid())
-  name        String   // 상품명
-  category    String   // 카테고리
-  price       Int      // 판매가
-  stock       Int      // 재고 수량 (StockMovement 합계와 일치, DB CHECK >= 0)
-  sku         String   @unique // 상품 코드 (SKU)
-  baseUnit    ProductUnit @default(EA) // 기본단위 (재고 수량의 단위)
-  boxQty      Int      @default(1)    // 박스당 입수 (BOX 단위 상품은 1)
-  trackExpiry Boolean  @default(true) // 유통기한 관리 여부
-  storageTemp StorageTemp @default(AMBIENT) // 보관 온도 (상온/냉장/냉동)
-  pickPolicy  PickPolicy @default(FIFO) // 자동 출고 순서 (FIFO 입고일순 / FEFO 유통기한 임박순)
-  safetyStock Int      @default(0)    // 안전재고 (현재고가 이 값 이하이면 '부족', DB CHECK >= 0)
-  locationId  String?  @unique        // 기본 보관위치 (한 칸에 한 상품만)
-  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  status      ProductStatus @default(ACTIVE) // 직원 등록 = PENDING, 관리자 확정 후 ACTIVE (대기 상품은 입출고·주문 불가)
+  id            String        @id @default(uuid())
+  name          String // 상품명
+  category      String // 카테고리
+  price         Int // 판매가
+  stock         Int // 재고 수량 (StockMovement 합계와 일치, DB CHECK >= 0)
+  sku           String        @unique // 상품 코드 (SKU)
+  baseUnit      ProductUnit   @default(EA) // 기본단위 (재고 수량의 단위)
+  boxQty        Int           @default(1) // 박스당 입수 (BOX 단위 상품은 1)
+  trackExpiry   Boolean       @default(true) // 유통기한 관리 여부
+  storageTemp   StorageTemp   @default(AMBIENT) // 보관 온도 (상온/냉장/냉동)
+  pickPolicy    PickPolicy    @default(FIFO) // 자동 출고 순서 (FIFO 입고일순 / FEFO 유통기한 임박순)
+  safetyStock   Int           @default(0) // 안전재고 (현재고가 이 값 이하이면 '부족', DB CHECK >= 0)
+  locationId    String?       @unique // 기본 보관위치 (한 칸에 한 상품만)
+  location      Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  status        ProductStatus @default(ACTIVE) // 직원 등록 = PENDING, 관리자 확정 후 ACTIVE (대기 상품은 입출고·주문 불가)
   createdById   String?
-  createdBy     User?    @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy     User?         @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   confirmedById String?
-  confirmedBy   User?    @relation("ProductConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedBy   User?         @relation("ProductConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
   confirmedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   inbounds         Inbound[]
   outbounds        Outbound[]
@@ -39,30 +39,31 @@ model Product {
   stockBalances    StockBalance[]
   locationHistory  ProductLocationHistory[]
   barcodes         ProductBarcode[]
+  cycleCountLines  CycleCountLine[]
 
   @@index([category, sku]) // 재고현황 분류 필터 + 코드순
-  @@index([stock])         // 재고 없음 필터, 재고 적은 순 정렬
+  @@index([stock]) // 재고 없음 필터, 재고 적은 순 정렬
   @@index([status])
 }
 
 enum ProductStatus {
   PENDING // 등록 대기 (관리자 확정 전)
-  ACTIVE  // 확정
+  ACTIVE // 확정
   INACTIVE // 단종·비활성 (목록에서 숨김, 입출고·주문·위치 배정 불가, 이력은 보존)
 }
 
 enum StorageTemp {
   AMBIENT // 상온
   CHILLED // 냉장
-  FROZEN  // 냉동
+  FROZEN // 냉동
 }
 
 enum ProductUnit {
-  EA  // 개
+  EA // 개
   BOX // 박스
   CAN // 캔
-  L   // 리터
-  KG  // 킬로그램
+  L // 리터
+  KG // 킬로그램
 }
 
 enum PickPolicy {
@@ -72,7 +73,7 @@ enum PickPolicy {
 
 enum BarcodeUnit {
   BASE // 낱개(기본단위) 바코드
-  BOX  // 박스 바코드 (스캔하면 박스 단위 입력)
+  BOX // 박스 바코드 (스캔하면 박스 단위 입력)
 }
 
 // 상품 바코드 (한 상품에 낱개·박스 등 여러 개, 코드는 전체에서 유일)
@@ -89,35 +90,35 @@ model ProductBarcode {
 
 // 입고 기록 (1건 = 1상품 입고)
 model Inbound {
-  id         String   @id @default(uuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  quantity   Int      // 입고 수량 (기본단위, 양수)
-  unitCost   Int?     // 입고 단가 (원)
-  partnerId  String?  // 공급처 (거래처 마스터)
-  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  memo       String?  // 비고
-  receivedAt DateTime @default(now()) // 입고일시
-  version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
-  requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
-  orderLineId String?                 // 발주 품목에서 입고 처리한 경우
-  orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  status     InboundStatus @default(CONFIRMED) // 직원 등록 = PENDING (재고 미반영), 관리자 확정 시 재고 반영
+  id            String          @id @default(uuid())
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity      Int // 입고 수량 (기본단위, 양수)
+  unitCost      Int? // 입고 단가 (원)
+  partnerId     String? // 공급처 (거래처 마스터)
+  partner       Partner?        @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  memo          String? // 비고
+  receivedAt    DateTime        @default(now()) // 입고일시
+  version       Int             @default(0) // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId     String?         @unique // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  orderLineId   String? // 발주 품목에서 입고 처리한 경우
+  orderLine     TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  status        InboundStatus   @default(CONFIRMED) // 직원 등록 = PENDING (재고 미반영), 관리자 확정 시 재고 반영
   createdById   String?
-  createdBy     User?     @relation("InboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy     User?           @relation("InboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   confirmedById String?
-  confirmedBy   User?     @relation("InboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedBy   User?           @relation("InboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
   confirmedAt   DateTime?
   cancelledById String?
-  cancelledBy   User?     @relation("InboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledBy   User?           @relation("InboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
   cancelledAt   DateTime?
   cancelReason  String?
-  locationId String?                  // 넣을 위치 (비우면 확정 시점의 상품 기본 보관위치, 그것도 없으면 미지정)
-  location   Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  expiryDate DateTime? @db.Date        // 유통기한 (선택, 나중에 재고현황에서 입력 가능)
-  lotNo      String?                   // 로트번호 (선택, 등록 후 수정 불가 — 이력 추적 기준)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
+  locationId    String? // 넣을 위치 (비우면 확정 시점의 상품 기본 보관위치, 그것도 없으면 미지정)
+  location      Location?       @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  expiryDate    DateTime?       @db.Date // 유통기한 (선택, 나중에 재고현황에서 입력 가능)
+  lotNo         String? // 로트번호 (선택, 등록 후 수정 불가 — 이력 추적 기준)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @default(now()) @updatedAt
 
   stockMovements StockMovement[] // 원입고(INBOUND) 1건 + 정정(INBOUND_CORRECTION) n건 + 취소(INBOUND_CANCEL) — 칸이 나뉘면 칸마다 1건
   revisions      InboundRevision[]
@@ -131,21 +132,21 @@ model Inbound {
 }
 
 enum InboundStatus {
-  PENDING   // 등록 대기 (재고 미반영)
+  PENDING // 등록 대기 (재고 미반영)
   CONFIRMED // 확정 (재고 반영)
   CANCELLED // 취소 (확정 후 취소, 재고 역이력)
 }
 
 enum StockMovementType {
-  INBOUND  // 입고
+  INBOUND // 입고
   OUTBOUND // 출고
-  ADJUST   // 재고조정
-  INBOUND_CORRECTION  // 입고정정 (입고 수량 수정)
+  ADJUST // 재고조정
+  INBOUND_CORRECTION // 입고정정 (입고 수량 수정)
   OUTBOUND_CORRECTION // 출고정정 (출고 수량 수정)
-  INBOUND_CANCEL      // 입고취소 (확정 입고 취소)
-  OUTBOUND_CANCEL     // 출고취소 (확정 출고 취소, 재고 복원)
-  EXPIRY_CHANGE       // 유통기한 변경 (같은 칸 안에서 -n/+n 한 쌍, 총재고 불변)
-  MOVE                // 위치 이동 (A칸 -n / B칸 +n 한 쌍, 유통기한 유지, 총재고 불변)
+  INBOUND_CANCEL // 입고취소 (확정 입고 취소)
+  OUTBOUND_CANCEL // 출고취소 (확정 출고 취소, 재고 복원)
+  EXPIRY_CHANGE // 유통기한 변경 (같은 칸 안에서 -n/+n 한 쌍, 총재고 불변)
+  MOVE // 위치 이동 (A칸 -n / B칸 +n 한 쌍, 유통기한 유지, 총재고 불변)
 }
 
 // 칸별 재고: 상품 × 위치(null = 미지정) × 유통기한(null = 미상)
@@ -159,8 +160,8 @@ model StockBalance {
   location   Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   expiryDate DateTime? @db.Date
   lotDate    DateTime? @db.Date // 입고일(KST) — 선입선출 기준. null = 입고일 미상(이관된 기존 재고, 가장 먼저 출고)
-  lotNo      String?   // 로트번호 (입고 때 입력, null = 로트 미지정) — 같은 번호끼리만 한 칸으로 합침
-  quantity   Int       // DB CHECK > 0
+  lotNo      String? // 로트번호 (입고 때 입력, null = 로트 미지정) — 같은 번호끼리만 한 칸으로 합침
+  quantity   Int // DB CHECK > 0
   updatedAt  DateTime  @updatedAt
 
   @@unique([productId, locationId, expiryDate, lotDate, lotNo])
@@ -169,25 +170,25 @@ model StockBalance {
 
 // 재고 변동 이력 (모든 재고 변경은 여기에 기록)
 model StockMovement {
-  id          String            @id @default(uuid())
-  productId   String
-  product     Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
-  type        StockMovementType
-  quantity    Int               // 변동 수량 (입고 +, 출고 -)
-  beforeStock Int               // 변경 전 재고
-  afterStock  Int               // 변경 후 재고
-  inboundId   String?
-  inbound     Inbound?          @relation(fields: [inboundId], references: [id], onDelete: Restrict)
-  outboundId  String?
-  outbound    Outbound?         @relation(fields: [outboundId], references: [id], onDelete: Restrict)
-  locationId  String?           // 변동된 칸의 위치 (null = 미지정)
-  location    Location?         @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  expiryDate  DateTime?         @db.Date // 변동된 칸의 유통기한 (null = 미상)
-  lotDate     DateTime?         @db.Date // 변동된 칸의 입고일 (null = 미상)
-  lotNo       String?           // 변동된 칸의 로트번호 (null = 미지정)
-  adjustmentId String?          // 재고조정(ADJUST)이면 그 조정 건
-  adjustment   StockAdjustment? @relation(fields: [adjustmentId], references: [id], onDelete: Restrict)
-  createdAt   DateTime          @default(now())
+  id           String            @id @default(uuid())
+  productId    String
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  type         StockMovementType
+  quantity     Int // 변동 수량 (입고 +, 출고 -)
+  beforeStock  Int // 변경 전 재고
+  afterStock   Int // 변경 후 재고
+  inboundId    String?
+  inbound      Inbound?          @relation(fields: [inboundId], references: [id], onDelete: Restrict)
+  outboundId   String?
+  outbound     Outbound?         @relation(fields: [outboundId], references: [id], onDelete: Restrict)
+  locationId   String? // 변동된 칸의 위치 (null = 미지정)
+  location     Location?         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  expiryDate   DateTime?         @db.Date // 변동된 칸의 유통기한 (null = 미상)
+  lotDate      DateTime?         @db.Date // 변동된 칸의 입고일 (null = 미상)
+  lotNo        String? // 변동된 칸의 로트번호 (null = 미지정)
+  adjustmentId String? // 재고조정(ADJUST)이면 그 조정 건
+  adjustment   StockAdjustment?  @relation(fields: [adjustmentId], references: [id], onDelete: Restrict)
+  createdAt    DateTime          @default(now())
 
   inboundRevision  InboundRevision?
   outboundRevision OutboundRevision?
@@ -200,32 +201,81 @@ model StockMovement {
 }
 
 enum StockAdjustReason {
-  EXPIRED     // 유통기한 경과 폐기 (감소)
-  SPOILED     // 부패·변질 폐기 (감소)
-  DAMAGED     // 파손 (감소)
-  LOST        // 분실 (감소)
+  EXPIRED // 유통기한 경과 폐기 (감소)
+  SPOILED // 부패·변질 폐기 (감소)
+  DAMAGED // 파손 (감소)
+  LOST // 분실 (감소)
   COUNT_MINUS // 실사 감소 (감소)
-  COUNT_PLUS  // 실사 증가 (증가)
+  COUNT_PLUS // 실사 증가 (증가)
   OTHER_MINUS // 기타 감소
-  OTHER_PLUS  // 기타 증가
+  OTHER_PLUS // 기타 증가
 }
 
 // 재고조정 헤더: 폐기·파손·실사 등 입출고 외 재고 증감 1건. 칸이 여러 개면 StockMovement 가 여러 건
 model StockAdjustment {
-  id        String            @id @default(uuid())
-  requestId String?           @unique // 등록 요청 고유키 (같은 요청 이중 처리 차단)
-  productId String
-  product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
-  reason    StockAdjustReason
-  quantity  Int               // 조정 수량 (증가 +, 감소 -)
-  memo      String?
+  id          String            @id @default(uuid())
+  requestId   String?           @unique // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  productId   String
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  reason      StockAdjustReason
+  quantity    Int // 조정 수량 (증가 +, 감소 -)
+  memo        String?
   createdById String?
-  createdBy   User?           @relation("StockAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt DateTime          @default(now())
+  createdBy   User?             @relation("StockAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime          @default(now())
 
   movements StockMovement[]
 
   @@index([productId, createdAt])
+}
+
+enum CycleCountStatus {
+  COUNTING // 실사 진행 중 (수량 입력)
+  CONFIRMED // 확정 (차이를 재고조정으로 반영)
+  CANCELLED // 취소 (재고 변동 없음)
+}
+
+// 재고 실사표: 범위(창고·위치코드 접두)의 칸 재고를 스냅샷으로 뜨고 실제 수량을 입력해 차이를 재고조정으로 반영
+model CycleCount {
+  id            String           @id @default(uuid())
+  countNo       String           @unique // 실사번호 (CC-YYMMDD-NNN)
+  requestId     String?          @unique // 등록 요청 고유키
+  status        CycleCountStatus @default(COUNTING)
+  scope         String // 범위 표시 (예: "냉장1 · RF1-R01")
+  memo          String?
+  version       Int              @default(0) // 확정·취소 동시 처리 방지
+  createdById   String?
+  createdBy     User?            @relation("CycleCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById String?
+  confirmedBy   User?            @relation("CycleCountConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt   DateTime?
+  createdAt     DateTime         @default(now())
+
+  lines CycleCountLine[]
+
+  @@index([status, createdAt])
+}
+
+// 실사 줄: 상품 × 위치 × 유통기한 × 입고일 × 로트 (StockBalance 와 같은 단위)
+model CycleCountLine {
+  id           String     @id @default(uuid())
+  countId      String
+  count        CycleCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  locationId   String?
+  location     Location?  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  expiryDate   DateTime?  @db.Date
+  lotDate      DateTime?  @db.Date
+  lotNo        String?
+  bookQty      Int // 실사표를 만든 시점의 장부 수량 (장부에 없던 발견분은 0)
+  countedQty   Int? // 실사 수량 (null = 아직 안 셈)
+  countedById  String?
+  countedAt    DateTime?
+  appliedDelta Int? // 확정 때 실제 반영한 증감 (장부 변동 반영 후)
+
+  @@unique([countId, productId, locationId, expiryDate, lotDate, lotNo])
+  @@index([countId])
 }
 
 // 입고 수정 기록 (누가 무엇을 왜 바꿨는지)
@@ -233,9 +283,9 @@ model InboundRevision {
   id              String         @id @default(uuid())
   inboundId       String
   inbound         Inbound        @relation(fields: [inboundId], references: [id], onDelete: Restrict)
-  reason          String         // 수정 사유
-  before          Json           // 변경 전 값 (바뀐 항목만)
-  after           Json           // 변경 후 값 (바뀐 항목만)
+  reason          String // 수정 사유
+  before          Json // 변경 전 값 (바뀐 항목만)
+  after           Json // 변경 후 값 (바뀐 항목만)
   quantityDelta   Int            @default(0) // 수량 차이 (재고 증감량)
   stockMovementId String?        @unique // 수량 변경 시 생성된 정정 재고이력
   stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
@@ -246,41 +296,41 @@ model InboundRevision {
 
 // 출고 기록 (1건 = 1상품 출고)
 model Outbound {
-  id         String   @id @default(uuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  quantity   Int      // 출고 수량 (기본단위, 양수)
-  unitPrice  Int?     // 출고 단가 (원, 기본값은 상품 판매가)
-  partnerId  String?  // 출고처 (거래처 마스터)
-  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  memo       String?  // 비고
-  shippedAt  DateTime @default(now()) // 출고일시
-  version    Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
-  requestId  String?  @unique         // 등록 요청 고유키 (같은 요청 이중 처리 차단)
-  orderLineId String?                 // 수주 품목에서 출고 처리한 경우
-  orderLine  TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  status     OutboundStatus @default(CONFIRMED) // 직원 등록 = PENDING (재고 미차감), 관리자 확정 시 재고 차감
-  createdById   String?
-  createdBy     User?     @relation("OutboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  confirmedById String?
-  confirmedBy   User?     @relation("OutboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
-  confirmedAt   DateTime?
-  cancelledById String?
-  cancelledBy   User?     @relation("OutboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
-  cancelledAt   DateTime?
-  cancelReason  String?
+  id             String          @id @default(uuid())
+  productId      String
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity       Int // 출고 수량 (기본단위, 양수)
+  unitPrice      Int? // 출고 단가 (원, 기본값은 상품 판매가)
+  partnerId      String? // 출고처 (거래처 마스터)
+  partner        Partner?        @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  memo           String? // 비고
+  shippedAt      DateTime        @default(now()) // 출고일시
+  version        Int             @default(0) // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId      String?         @unique // 등록 요청 고유키 (같은 요청 이중 처리 차단)
+  orderLineId    String? // 수주 품목에서 출고 처리한 경우
+  orderLine      TradeOrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  status         OutboundStatus  @default(CONFIRMED) // 직원 등록 = PENDING (재고 미차감), 관리자 확정 시 재고 차감
+  createdById    String?
+  createdBy      User?           @relation("OutboundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  confirmedById  String?
+  confirmedBy    User?           @relation("OutboundConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt    DateTime?
+  cancelledById  String?
+  cancelledBy    User?           @relation("OutboundCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledAt    DateTime?
+  cancelReason   String?
   // 출고 위치 지정: pickFixed=false 면 자동(유통기한 미상 → 빠른 순), true 면 이 칸에서만 출고 (부족하면 거부)
   // 칸 = pickLocationId(null 미지정) × pickExpiryDate(null 미상). 대기 건은 확정할 때 관리자가 바꿀 수 있음
-  pickFixed      Boolean   @default(false)
+  pickFixed      Boolean         @default(false)
   pickLocationId String?
-  pickLocation   Location? @relation(fields: [pickLocationId], references: [id], onDelete: Restrict)
-  pickExpiryDate DateTime? @db.Date
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
+  pickLocation   Location?       @relation(fields: [pickLocationId], references: [id], onDelete: Restrict)
+  pickExpiryDate DateTime?       @db.Date
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
 
   stockMovements StockMovement[] // 원출고(OUTBOUND) + 정정(OUTBOUND_CORRECTION) + 취소(OUTBOUND_CANCEL) — 칸이 나뉘면 칸마다 1건
   revisions      OutboundRevision[]
-  dispatchItem   DispatchItem?      // 배차된 경우 (확정 출고만 배차 가능)
+  dispatchItem   DispatchItem? // 배차된 경우 (확정 출고만 배차 가능)
 
   @@index([productId, shippedAt])
   @@index([partnerId])
@@ -290,7 +340,7 @@ model Outbound {
 }
 
 enum OutboundStatus {
-  PENDING   // 등록 대기 (재고 미차감)
+  PENDING // 등록 대기 (재고 미차감)
   CONFIRMED // 확정 (재고 차감)
   CANCELLED // 취소 (확정 후 취소, 재고 복원 역이력)
 }
@@ -300,9 +350,9 @@ model OutboundRevision {
   id              String         @id @default(uuid())
   outboundId      String
   outbound        Outbound       @relation(fields: [outboundId], references: [id], onDelete: Restrict)
-  reason          String         // 수정 사유
-  before          Json           // 변경 전 값 (바뀐 항목만)
-  after           Json           // 변경 후 값 (바뀐 항목만)
+  reason          String // 수정 사유
+  before          Json // 변경 전 값 (바뀐 항목만)
+  after           Json // 변경 후 값 (바뀐 항목만)
   quantityDelta   Int            @default(0) // 출고 수량 차이 (재고 증감은 반대 부호)
   stockMovementId String?        @unique // 수량 변경 시 생성된 정정 재고이력
   stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
@@ -315,15 +365,15 @@ model OutboundRevision {
 
 enum StorageType {
   REFRIGERATED // 냉장
-  FROZEN       // 냉동
-  AMBIENT      // 실온
+  FROZEN // 냉동
+  AMBIENT // 실온
 }
 
 // 창고
 model Warehouse {
   id          String      @id @default(uuid())
   code        String      @unique // 창고코드 (예: RF1, FZ2, AM1)
-  name        String      // 창고명 (예: 냉장 1창고)
+  name        String // 창고명 (예: 냉장 1창고)
   storageType StorageType // 보관유형
   memo        String?
   isActive    Boolean     @default(true) // false = 비활성 (모든 칸을 새 위치로 지정 불가)
@@ -339,9 +389,9 @@ model Rack {
   id           String    @id @default(uuid())
   warehouseId  String
   warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  number       Int       // 랙 번호 (창고 안에서 1부터, 코드 R01)
-  levels       Int       // 단 수
-  binsPerLevel Int       // 단별 구획 수
+  number       Int // 랙 번호 (창고 안에서 1부터, 코드 R01)
+  levels       Int // 단 수
+  binsPerLevel Int // 단별 구획 수
   isActive     Boolean   @default(true) // false = 비활성 (이 랙의 칸을 새 위치로 지정 불가)
   createdAt    DateTime  @default(now())
 
@@ -357,16 +407,17 @@ model Location {
   warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   rackId      String
   rack        Rack      @relation(fields: [rackId], references: [id], onDelete: Restrict)
-  level       Int       // 단 (1 = 맨 아래)
-  bin         Int       // 구획 (1 = 왼쪽부터)
+  level       Int // 단 (1 = 맨 아래)
+  bin         Int // 구획 (1 = 왼쪽부터)
   code        String    @unique // 위치코드 (예: RF1-R01-2-3)
   createdAt   DateTime  @default(now())
 
-  product Product? // 이 칸을 기본 보관위치로 쓰는 상품
-  stockBalances  StockBalance[]  // 이 칸에 실제로 있는 재고 (여러 상품 가능)
-  stockMovements StockMovement[]
-  inbounds       Inbound[]
-  outboundPicks  Outbound[]      // 이 칸을 출고 위치로 지정한 출고
+  product         Product? // 이 칸을 기본 보관위치로 쓰는 상품
+  stockBalances   StockBalance[] // 이 칸에 실제로 있는 재고 (여러 상품 가능)
+  stockMovements  StockMovement[]
+  inbounds        Inbound[]
+  outboundPicks   Outbound[] // 이 칸을 출고 위치로 지정한 출고
+  cycleCountLines CycleCountLine[]
 
   @@unique([rackId, level, bin])
   @@index([warehouseId])
@@ -374,14 +425,14 @@ model Location {
 
 // 상품 보관위치 변경 이력 (직접 변경·교환·해제)
 model ProductLocationHistory {
-  id            String   @id @default(uuid())
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  fromCode      String?  // 변경 전 위치코드 (없었으면 null)
-  toCode        String?  // 변경 후 위치코드 (해제면 null)
+  id             String   @id @default(uuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  fromCode       String? // 변경 전 위치코드 (없었으면 null)
+  toCode         String? // 변경 후 위치코드 (해제면 null)
   swappedWithSku String? // 자리를 서로 바꾼 상대 상품 코드
-  reason        String?  // 사유
-  createdAt     DateTime @default(now())
+  reason         String? // 사유
+  createdAt      DateTime @default(now())
 
   @@index([productId, createdAt])
 }
@@ -390,14 +441,14 @@ model ProductLocationHistory {
 
 enum TradeOrderType {
   PURCHASE // 발주 (공급처에 주문 → 입고)
-  SALES    // 수주 (거래처 주문 → 출고)
+  SALES // 수주 (거래처 주문 → 출고)
 }
 
 enum TradeOrderStatus {
-  OPEN      // 진행 전 (처리 수량 0)
-  PARTIAL   // 일부 입고/출고
-  DONE      // 전량 완료
-  CLOSED    // 잔량 종결 (남은 수량 처리 안 함)
+  OPEN // 진행 전 (처리 수량 0)
+  PARTIAL // 일부 입고/출고
+  DONE // 전량 완료
+  CLOSED // 잔량 종결 (남은 수량 처리 안 함)
   CANCELLED // 취소 (처리 이력 없을 때만)
 }
 
@@ -405,7 +456,7 @@ enum TradeOrderStatus {
 enum PartnerType {
   SUPPLIER // 공급처 (입고·발주)
   CUSTOMER // 출고처 (출고·수주)
-  BOTH     // 둘 다
+  BOTH // 둘 다
 }
 
 model Partner {
@@ -413,7 +464,7 @@ model Partner {
   name      String
   type      PartnerType
   isActive  Boolean     @default(true) // false = 새 입출고·주문에 선택 불가 (기존 기록은 유지)
-  version   Int         @default(0)    // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  version   Int         @default(0) // 수정할 때마다 +1 (동시 수정 충돌 방지)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -427,10 +478,10 @@ model TradeOrder {
   id        String           @id @default(uuid())
   type      TradeOrderType
   orderNo   String           @unique // PO-20261001-001 / SO-20261001-001
-  partnerId String           // 공급처(발주) 또는 거래처(수주) — 거래처 마스터
+  partnerId String // 공급처(발주) 또는 거래처(수주) — 거래처 마스터
   partner   Partner          @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   status    TradeOrderStatus @default(OPEN)
-  dueDate   DateTime?        // 입고 예정일 / 납기일 (KST 자정)
+  dueDate   DateTime? // 입고 예정일 / 납기일 (KST 자정)
   memo      String?
   version   Int              @default(0)
   requestId String?          @unique // 등록 요청 고유키
@@ -448,11 +499,11 @@ model TradeOrderLine {
   id           String     @id @default(uuid())
   orderId      String
   order        TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  seq          Int        // 품목 순서
+  seq          Int // 품목 순서
   productId    String
   product      Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
-  quantity     Int        // 주문 수량
-  unitPrice    Int?       // 단가
+  quantity     Int // 주문 수량
+  unitPrice    Int? // 단가
   processedQty Int        @default(0) // 입고(발주) / 출고(수주) 처리된 수량
 
   inbounds  Inbound[]
@@ -465,11 +516,11 @@ model TradeOrderLine {
 // ───────── 배차 ─────────
 
 enum DispatchStatus {
-  PLANNED    // 배차 (편성)
-  LOADED     // 상차 완료
+  PLANNED // 배차 (편성)
+  LOADED // 상차 완료
   IN_TRANSIT // 배송중
-  DELIVERED  // 배송 완료
-  CANCELLED  // 취소
+  DELIVERED // 배송 완료
+  CANCELLED // 취소
 }
 
 // 차량
@@ -491,7 +542,7 @@ model Vehicle {
 model Dispatch {
   id           String         @id @default(uuid())
   dispatchNo   String         @unique // DSP-20261001-001
-  deliveryDate DateTime       // 배송일 (KST 자정)
+  deliveryDate DateTime // 배송일 (KST 자정)
   vehicleId    String
   vehicle      Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   status       DispatchStatus @default(PLANNED)
@@ -516,7 +567,7 @@ model DispatchItem {
   dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
   outboundId String   @unique
   outbound   Outbound @relation(fields: [outboundId], references: [id], onDelete: Restrict)
-  seq        Int      // 배송 순서
+  seq        Int // 배송 순서
   createdAt  DateTime @default(now())
 
   @@index([dispatchId])
@@ -536,22 +587,24 @@ model User {
   loginId      String   @unique // 로그인 아이디 (소문자)
   name         String
   role         UserRole @default(STAFF)
-  passwordHash String   // scrypt (modules/user/password.ts)
+  passwordHash String // scrypt (modules/user/password.ts)
   isActive     Boolean  @default(true)
   version      Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions          Session[]
-  productsCreated   Product[] @relation("ProductCreatedBy")
-  productsConfirmed Product[] @relation("ProductConfirmedBy")
-  inboundsCreated   Inbound[] @relation("InboundCreatedBy")
-  inboundsConfirmed Inbound[] @relation("InboundConfirmedBy")
-  inboundsCancelled Inbound[] @relation("InboundCancelledBy")
-  outboundsCreated   Outbound[] @relation("OutboundCreatedBy")
-  outboundsConfirmed Outbound[] @relation("OutboundConfirmedBy")
-  outboundsCancelled Outbound[] @relation("OutboundCancelledBy")
-  stockAdjustments   StockAdjustment[] @relation("StockAdjustmentCreatedBy")
+  sessions             Session[]
+  productsCreated      Product[]         @relation("ProductCreatedBy")
+  productsConfirmed    Product[]         @relation("ProductConfirmedBy")
+  inboundsCreated      Inbound[]         @relation("InboundCreatedBy")
+  inboundsConfirmed    Inbound[]         @relation("InboundConfirmedBy")
+  inboundsCancelled    Inbound[]         @relation("InboundCancelledBy")
+  outboundsCreated     Outbound[]        @relation("OutboundCreatedBy")
+  outboundsConfirmed   Outbound[]        @relation("OutboundConfirmedBy")
+  outboundsCancelled   Outbound[]        @relation("OutboundCancelledBy")
+  stockAdjustments     StockAdjustment[] @relation("StockAdjustmentCreatedBy")
+  cycleCountsCreated   CycleCount[]      @relation("CycleCountCreatedBy")
+  cycleCountsConfirmed CycleCount[]      @relation("CycleCountConfirmedBy")
 }
 
 // 로그인 시도 제한 (아이디별 연속 실패 횟수, 없는 아이디도 기록 · DB CHECK failCount >= 0)
@@ -577,30 +630,30 @@ model Session {
 // ───────── 감사 로그 ─────────
 
 enum AuditCategory {
-  PRODUCT   // 상품
-  INBOUND   // 입고
-  OUTBOUND  // 출고
-  STOCK     // 재고 (안전재고 등)
+  PRODUCT // 상품
+  INBOUND // 입고
+  OUTBOUND // 출고
+  STOCK // 재고 (안전재고 등)
   WAREHOUSE // 창고·랙·보관위치
-  ORDER     // 발주·수주
-  DISPATCH  // 배차
-  VEHICLE   // 차량
-  USER      // 사용자·로그인
-  PARTNER   // 거래처
-  NOTICE    // 공지사항
+  ORDER // 발주·수주
+  DISPATCH // 배차
+  VEHICLE // 차량
+  USER // 사용자·로그인
+  PARTNER // 거래처
+  NOTICE // 공지사항
 }
 
 // 모든 등록·수정·처리 작업 기록. 추가만 가능 (DB 트리거로 UPDATE·DELETE·TRUNCATE 차단)
 model AuditLog {
   id          String        @id @default(uuid())
   category    AuditCategory
-  action      String        // 작업 코드 (modules/audit/codes.ts AUDIT_ACTION_LABELS)
-  targetId    String?       // 대상 레코드 id
-  targetLabel String?       // 대상 표시값 (상품명, 주문번호 등)
-  summary     String        // 작업 내용 (한국어 한 줄)
-  detail      Json?         // 상세 값 (입력값·변경 전후 등)
-  actorId     String?       // 작업자 id (FK 없음: 로그는 사용자와 무관하게 보존)
-  actor       String?       // 작업자 표시 "이름(아이디)" (로그인 전 기록·시스템 작업은 null)
+  action      String // 작업 코드 (modules/audit/codes.ts AUDIT_ACTION_LABELS)
+  targetId    String? // 대상 레코드 id
+  targetLabel String? // 대상 표시값 (상품명, 주문번호 등)
+  summary     String // 작업 내용 (한국어 한 줄)
+  detail      Json? // 상세 값 (입력값·변경 전후 등)
+  actorId     String? // 작업자 id (FK 없음: 로그는 사용자와 무관하게 보존)
+  actor       String? // 작업자 표시 "이름(아이디)" (로그인 전 기록·시스템 작업은 null)
   createdAt   DateTime      @default(now())
 
   @@index([createdAt])
@@ -613,10 +666,10 @@ model Notice {
   title       String
   body        String
   isPinned    Boolean  @default(false) // 상단 고정
-  isPublished Boolean  @default(true)  // false = 대시보드에서 숨김
-  authorName  String   // 작성자 이름 (작성 시점 보존)
-  version     Int      @default(0)     // 수정할 때마다 +1 (동시 수정 충돌 방지)
-  requestId   String?  @unique         // 등록 요청 고유키
+  isPublished Boolean  @default(true) // false = 대시보드에서 숨김
+  authorName  String // 작성자 이름 (작성 시점 보존)
+  version     Int      @default(0) // 수정할 때마다 +1 (동시 수정 충돌 방지)
+  requestId   String?  @unique // 등록 요청 고유키
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

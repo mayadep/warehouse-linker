@@ -191,6 +191,15 @@
 - 출고 순서 `Product.pickPolicy`(FIFO 기본 / FEFO): FEFO는 유통기한을 아는 재고를 빠른 순으로 먼저, 유통기한 미상은 뒤로, 같으면 입고일순. 관리자가 상품 수정에서 변경(`productVersion`에 포함).
 - 로트 추적 `/stock/lots`(재고 조회 권한): 로트번호 정확 일치(대소문자 무시)로 현재 남은 재고, 입고·출고·정정·취소 이력(거래처 포함, 최근 200건).
 
+## 재고 실사 (modules/cyclecount) — 2026-10-28, 마이그레이션 `cycle_count`
+- 모델: `CycleCount`(실사번호 CC-YYMMDD-NNN, 상태 COUNTING→CONFIRMED|CANCELLED, version) + `CycleCountLine`(상품×위치×유통기한×입고일×로트, `bookQty` 스냅샷, `countedQty`, `appliedDelta`). CHECK: bookQty>=0, countedQty>=0.
+- 권한: `count.manage`(입출고 담당·관리자: 생성·수량 입력·발견분·취소), `count.confirm`(관리자: 확정).
+- 흐름: 창고 또는 위치코드 앞부분(랙 단위)으로 범위 지정 → 범위 안 `StockBalance`를 스냅샷(한 장 최대 3,000줄) → 칸별 실사 수량 입력(줄 단위 저장, 위치·상품 스캔으로 필터) → 확정.
+- 확정(한 트랜잭션): 센 줄만 반영, 증감 = 실사 수량 − **확정 시점** 칸 재고(실사표를 뜬 뒤 입출고가 있어도 실재고에 맞춤). 재고조정(`COUNT_PLUS/MINUS`, 메모에 실사번호) + `changeStock(..., lot)`로 해당 로트만 증감. 못 센 줄은 반영하지 않음. 취소는 재고 변동 없음.
+- 발견분: 실사표에 없던 재고를 상품코드/바코드+위치코드로 추가(장부 0, 로트 미지정).
+- `changeStock`에 `lot`(입고일+로트번호) 인자 추가: strict 감소는 그 로트에서만, 입고·출고 무관 증가는 그 로트로 넣는다.
+- 중복·동시성: 생성은 `requestId`, 확정·취소는 `version` 조건부 UPDATE. 감사로그 `CYCLE_COUNT_CREATE/CONFIRM/CANCEL`.
+
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
 2. 유사 건 경고: 최근 10분 내 같은 상품·거래처·수량이 있으면 status "confirm" 반환(저장 안 함) → [그래도 등록](confirmDuplicate=1) 시 저장
