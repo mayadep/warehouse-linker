@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { authorize, NO_PERMISSION_MESSAGE } from "@/modules/user/auth";
 import {
+  parseBarcodeAddForm,
+  parseBarcodeRemoveForm,
   parseProductActiveForm,
   parseProductConfirmForm,
   parseProductForm,
@@ -12,6 +14,10 @@ import {
   type ProductUpdateFieldErrors,
 } from "./validation";
 import {
+  addBarcode,
+  findByBarcode,
+  listBarcodes,
+  removeBarcode,
   confirmProduct,
   createProduct,
   DuplicateSkuError,
@@ -132,4 +138,39 @@ export async function setProductActiveAction(_p: ProductReviewState, fd: FormDat
     const p = await setProductActive(parsed.data.productId, parsed.data.active);
     return `[${p.sku}] ${p.name} ${parsed.data.active ? "다시 사용" : "비활성화"} 완료`;
   });
+}
+
+/** 바코드 등록 (관리자) */
+export async function addBarcodeAction(_p: ProductReviewState, fd: FormData): Promise<ProductReviewState> {
+  if (!(await authorize("product.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseBarcodeAddForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const p = await addBarcode(parsed.data);
+    return `[${p.sku}] ${p.name} 바코드 등록 완료`;
+  });
+}
+
+/** 바코드 삭제 (관리자) */
+export async function removeBarcodeAction(_p: ProductReviewState, fd: FormData): Promise<ProductReviewState> {
+  if (!(await authorize("product.manage"))) return { status: "error", message: NO_PERMISSION_MESSAGE, ts: Date.now() };
+  const parsed = parseBarcodeRemoveForm(fd);
+  if (!parsed.ok) return { status: "error", message: parsed.message, ts: Date.now() };
+  return review(async () => {
+    const p = await removeBarcode(parsed.barcodeId);
+    return `[${p.sku}] ${p.name} 바코드 삭제 완료`;
+  });
+}
+
+/** 상품의 바코드 목록 (관리자 바코드 관리 창) */
+export async function listBarcodesAction(productId: string) {
+  if (!(await authorize("product.manage"))) return null;
+  if (typeof productId !== "string") return null;
+  return listBarcodes(productId);
+}
+
+/** 스캔한 바코드 → 상품·단위 (입출고 폼). 로그인한 사용자 누구나 */
+export async function lookupBarcodeAction(code: string) {
+  if (!(await authorize("stock.view"))) return null;
+  return findByBarcode(code);
 }

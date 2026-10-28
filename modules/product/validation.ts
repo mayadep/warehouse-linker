@@ -1,6 +1,8 @@
 // 상품 등록 입력값 검증 (서버에서 반드시 실행)
 import { DEFAULT_SAFETY_STOCK } from "./defaults";
 import { isProductUnit, type ProductUnitCode } from "./units";
+import { isBarcodeUnit, normalizeBarcode } from "./barcode";
+import type { BarcodeUnit } from "@prisma/client";
 import { isStorageTemp, type StorageTempCode } from "./storage";
 
 const PRODUCT_LIMITS = {
@@ -224,4 +226,22 @@ export function parseProductActiveForm(
   const mode = text(fd, "mode");
   if (mode !== "inactive" && mode !== "active") return { ok: false, message: "잘못된 요청입니다." };
   return { ok: true, data: { productId, active: mode === "active" } };
+}
+
+/** 바코드 등록 (코드 형식은 service에서 검증) */
+export function parseBarcodeAddForm(
+  fd: FormData
+): { ok: true; data: { productId: string; code: string; unit: BarcodeUnit } } | { ok: false; message: string } {
+  const productId = text(fd, "productId");
+  if (!UUID_RE.test(productId)) return { ok: false, message: "잘못된 상품입니다." };
+  const unit = text(fd, "unit");
+  if (!isBarcodeUnit(unit)) return { ok: false, message: "바코드 단위를 선택하세요." };
+  return { ok: true, data: { productId, code: normalizeBarcode(fd.get("code")), unit } };
+}
+
+/** 바코드 삭제 */
+export function parseBarcodeRemoveForm(fd: FormData): { ok: true; barcodeId: string } | { ok: false; message: string } {
+  const barcodeId = text(fd, "barcodeId");
+  if (!UUID_RE.test(barcodeId)) return { ok: false, message: "잘못된 바코드입니다." };
+  return { ok: true, barcodeId };
 }

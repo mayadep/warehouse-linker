@@ -176,6 +176,14 @@
 - 서비스 `searchProductsForInbound`·`searchProductsForOutbound`(조건 `activeProductSearchWhere`, 검색어 정리 `normalizeProductKeyword` — modules/product/service.ts). 출고는 판매가를 `price.view` 권한이 있을 때만 내려줌
 - 화면: 고른 상품은 검색어를 바꿔도 유지, 결과가 20개를 넘으면 안내 문구 표시
 
+## 바코드 (modules/product/barcode.ts) — 2026-10-28, 마이그레이션 `product_barcode`
+- `ProductBarcode(productId, code unique, unit BASE|BOX)`: 상품당 최대 10개, 코드는 전체 유일. 낱개·박스 바코드를 따로 둔다.
+- 형식: 영숫자 `-._` 4~40자. 숫자 8/12/13/14자리는 GS1 체크디지트 검증. 박스 바코드는 박스당 입수 2 이상인 상품만.
+- 등록·삭제는 관리자(`product.manage`), 상품 등록 화면 [바코드] 창. 감사로그 `PRODUCT_BARCODE_ADD/REMOVE`.
+- 입고·출고 폼 검색창: USB 스캐너(키보드 입력 + Enter)나 [카메라 스캔]으로 입력하면 `lookupBarcodeAction`으로 상품을 찾아 자동 선택, 박스 바코드면 박스 단위로 선택. 상품 검색은 바코드 정확 일치도 포함.
+- 카메라 스캔(`components/BarcodeScanButton`): `BarcodeDetector` 우선, 미지원 브라우저는 `@zxing/browser` 폴백. HTTPS 또는 localhost 필요.
+- 라벨 출력 `/products/labels`(관리자): 상품 바코드·위치코드(Code128) 라벨을 `bwip-js`로 SVG 생성해 인쇄.
+
 ## 중복 방지 (입고·출고 공통)
 1. 요청 고유키: 폼이 저장 성공 전까지 같은 requestId 재사용 → 서버는 기존 requestId면 거부, 동시 요청은 unique 제약(P2002)로 1건만 저장
 2. 유사 건 경고: 최근 10분 내 같은 상품·거래처·수량이 있으면 status "confirm" 반환(저장 안 함) → [그래도 등록](confirmDuplicate=1) 시 저장

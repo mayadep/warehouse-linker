@@ -76,6 +76,11 @@ export default async function NewProductPage({
           {pendingCount > 0 && <span className="ml-2 font-medium text-amber-700">확정 대기 {pendingCount.toLocaleString()}개</span>}
         </p>
         <div className="flex items-center gap-2">
+          {canManage && (
+            <Link href="/products/labels" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              바코드 라벨
+            </Link>
+          )}
           <form className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-sm text-gray-600">
               <input type="checkbox" name="inactive" value="1" defaultChecked={includeInactive} />

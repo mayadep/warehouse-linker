@@ -6,6 +6,8 @@ import {
   searchInboundProductsAction,
   type InboundActionState,
 } from "@/modules/inbound/actions";
+import { lookupBarcodeAction } from "@/modules/product/actions";
+import BarcodeScanButton from "@/components/BarcodeScanButton";
 import { newRequestId } from "@/lib/request-id";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +104,28 @@ export default function InboundForm({
     };
   }, [keyword, products, productTotal]);
 
+  const [scanMsg, setScanMsg] = useState("");
+
+  /** 바코드로 상품을 찾아 선택 (박스 바코드면 박스 단위로) */
+  async function onScan(raw: string) {
+    const code = raw.trim();
+    setScanMsg("");
+    if (!code) return;
+    const hit = await lookupBarcodeAction(code);
+    if (!hit) return; // 바코드가 아니면 일반 검색어로 그대로 둔다
+    const r = await searchInboundProductsAction(code);
+    const row = r?.rows.find((p) => p.id === hit.productId);
+    if (!r || !row) {
+      setScanMsg("바코드의 상품을 불러오지 못했습니다. 다시 스캔하세요.");
+      return;
+    }
+    setOptions(r.rows);
+    setTotal(r.total);
+    setProductId(row.id);
+    setPicked(row);
+    setQtyUnit(hit.unit === "BOX" ? "BOX" : "BASE");
+  }
+
   const selected = productId ? picked : null;
   // 박스 입력은 기본단위가 박스가 아니고 입수가 2 이상인 상품만
   const canBox = !!selected && selected.baseUnit !== "BOX" && selected.boxQty > 1;
@@ -130,11 +154,22 @@ export default function InboundForm({
     >
       <label className="col-span-2 text-sm">
         상품 검색
-        <Input
-          className={input}
-          placeholder="코드·품명·분류로 검색"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)} />
+        <div className="flex gap-2">
+          <Input
+            className={input}
+            placeholder="코드·품명·분류 검색 또는 바코드 스캔"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              // USB 스캐너는 마지막에 Enter를 보낸다: 폼 제출 대신 바코드로 조회
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onScan(keyword);
+              }
+            }} />
+          <BarcodeScanButton onScan={(code) => { setKeyword(code); onScan(code); }} />
+        </div>
+        {scanMsg && <p className="mt-1 text-xs text-red-600">{scanMsg}</p>}
       </label>
       <div className="col-span-2 text-sm">
         <span>상품</span>

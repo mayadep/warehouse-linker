@@ -61,6 +61,8 @@ const AUDIT_ACTION_LABELS = {
   PRODUCT_CONFIRM: "상품 등록 확정",
   PRODUCT_REJECT: "상품 등록 반려",
   PRODUCT_UPDATE: "상품 수정",
+  PRODUCT_BARCODE_ADD: "바코드 등록",
+  PRODUCT_BARCODE_REMOVE: "바코드 삭제",
   PRODUCT_INACTIVE: "상품 비활성화",
   PRODUCT_ACTIVE: "상품 다시 사용",
   INBOUND_CREATE: "입고 등록",

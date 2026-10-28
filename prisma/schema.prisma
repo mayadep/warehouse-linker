@@ -37,6 +37,7 @@ model Product {
   stockAdjustments StockAdjustment[]
   stockBalances    StockBalance[]
   locationHistory  ProductLocationHistory[]
+  barcodes         ProductBarcode[]
 
   @@index([category, sku]) // 재고현황 분류 필터 + 코드순
   @@index([stock])         // 재고 없음 필터, 재고 적은 순 정렬
@@ -61,6 +62,23 @@ enum ProductUnit {
   CAN // 캔
   L   // 리터
   KG  // 킬로그램
+}
+
+enum BarcodeUnit {
+  BASE // 낱개(기본단위) 바코드
+  BOX  // 박스 바코드 (스캔하면 박스 단위 입력)
+}
+
+// 상품 바코드 (한 상품에 낱개·박스 등 여러 개, 코드는 전체에서 유일)
+model ProductBarcode {
+  id        String      @id @default(uuid())
+  productId String
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  code      String      @unique // 바코드 값 (EAN/UPC 숫자 또는 Code128 영숫자)
+  unit      BarcodeUnit @default(BASE)
+  createdAt DateTime    @default(now())
+
+  @@index([productId])
 }
 
 // 입고 기록 (1건 = 1상품 입고)
