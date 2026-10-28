@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import {
   addFoundAction,
@@ -46,7 +47,9 @@ type Line = {
 const initialState: CountActionState = { status: "idle", message: "" };
 const signed = (n: number) => (n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString());
 
-export default function CountSheet({ count, lines, canConfirm }: { count: CountInfo; lines: Line[]; canConfirm: boolean }) {
+type Overlap = { id: string; countNo: string; createdByName: string | null; lines: number };
+
+export default function CountSheet({ count, lines, overlaps, canConfirm }: { count: CountInfo; lines: Line[]; overlaps: Overlap[]; canConfirm: boolean }) {
   const counting = count.status === "COUNTING";
   const [filter, setFilter] = useState("");
   const [onlyDiff, setOnlyDiff] = useState(false);
@@ -131,6 +134,23 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
           센 줄 {stats.counted.toLocaleString()} / {lines.length.toLocaleString()} · 차이 {stats.diffLines.toLocaleString()}줄
         </span>
       </div>
+
+      {counting && overlaps.length > 0 && (
+        <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">같은 칸을 세는 다른 진행 중 실사표가 있습니다.</p>
+          <ul className="mt-1 list-disc pl-5">
+            {overlaps.map((o) => (
+              <li key={o.id}>
+                <Link href={`/counts/${o.id}`} className="underline">
+                  {o.countNo}
+                </Link>{" "}
+                (담당 {o.createdByName ?? "-"}) · 겹치는 줄 {o.lines.toLocaleString()}개
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs">같은 칸을 따로 세면 나중에 확정한 쪽이 결과를 좌우합니다. 담당자와 조율해 한쪽을 취소하거나 범위를 나누세요.</p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -255,6 +275,7 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
         <TransitionDialog
           mode={dialog}
           count={count}
+          overlapCount={overlaps.length}
           uncounted={lines.length - stats.counted}
           diffLines={stats.diffLines}
           onClose={() => setDialog(null)}
@@ -267,12 +288,14 @@ export default function CountSheet({ count, lines, canConfirm }: { count: CountI
 function TransitionDialog({
   mode,
   count,
+  overlapCount,
   uncounted,
   diffLines,
   onClose,
 }: {
   mode: "confirm" | "cancel";
   count: CountInfo;
+  overlapCount: number;
   uncounted: number;
   diffLines: number;
   onClose: () => void;
@@ -305,6 +328,11 @@ function TransitionDialog({
               ? `센 줄 중 장부와 다른 ${diffLines.toLocaleString()}줄을 재고조정(실사 증가/감소)으로 재고에 반영합니다. 아직 세지 않은 ${uncounted.toLocaleString()}줄은 반영하지 않습니다. 확정 후에는 되돌릴 수 없습니다.`
               : "실사를 취소하면 입력한 수량은 버려지고 재고는 바뀌지 않습니다."}
           </p>
+          {confirm && overlapCount > 0 && (
+            <p className="rounded-md bg-amber-50 p-2 text-sm text-amber-900">
+              같은 칸을 세는 다른 진행 중 실사표가 {overlapCount.toLocaleString()}장 있습니다. 담당자와 조율했는지 확인하세요.
+            </p>
+          )}
           {state.status === "error" && (
             <p aria-live="polite" className="text-sm text-red-600">
               {state.message}

@@ -13,8 +13,53 @@ export class CountError extends Error {}
 
 const kstYymmdd = () => todayKst().replaceAll("-", "").slice(2);
 
-/** 실사표 생성: 범위의 칸 재고를 스냅샷으로 뜬다. 같은 requestId 는 1장만 */
-export async function createCycleCount(input: CountCreateInput, actor: CurrentUser) {
+export type CountOverlap = { id: string; countNo: string; createdByName: string | null; lines: number };
+
+type OverlapKey = { productId: string; locationId: string | null; expiryDate: Date | null; lotDate: Date | null; lotNo: string | null };
+
+/**
+ * 같은 칸(상품·위치·유통기한·입고일·로트)을 세는 다른 진행 중 실사표. 경고용이며 막지는 않는다.
+ * 같은 칸을 두 곳에서 따로 세면 확정 결과가 나중 확정에 좌우되므로, 담당자끼리 조율하도록 알려 준다
+ */
+async function findOverlaps(
+  db: Pick<Prisma.TransactionClient, "cycleCountLine">,
+  keys: OverlapKey[],
+  excludeCountId?: string
+): Promise<CountOverlap[]> {
+  if (keys.length === 0) return [];
+  const locationIds = [...new Set(keys.flatMap((k) => (k.locationId ? [k.locationId] : [])))];
+  const hasNoLocation = keys.some((k) => k.locationId === null);
+  const others = await db.cycleCountLine.findMany({
+    where: {
+      count: { status: "COUNTING", ...(excludeCountId ? { id: { not: excludeCountId } } : {}) },
+      OR: [{ locationId: { in: locationIds } }, ...(hasNoLocation ? [{ locationId: null }] : [])],
+    },
+    select: {
+      countId: true,
+      productId: true,
+      locationId: true,
+      expiryDate: true,
+      lotDate: true,
+      lotNo: true,
+      count: { select: { countNo: true, createdBy: { select: { name: true } } } },
+    },
+  });
+  const mine = new Set(keys.map((k) => balanceKey(k.productId, k.locationId, k.expiryDate, k.lotDate, k.lotNo)));
+  const byCount = new Map<string, CountOverlap>();
+  for (const o of others) {
+    if (!mine.has(balanceKey(o.productId, o.locationId, o.expiryDate, o.lotDate, o.lotNo))) continue;
+    const cur = byCount.get(o.countId);
+    if (cur) cur.lines++;
+    else byCount.set(o.countId, { id: o.countId, countNo: o.count.countNo, createdByName: o.count.createdBy?.name ?? null, lines: 1 });
+  }
+  return [...byCount.values()].sort((a, b) => a.countNo.localeCompare(b.countNo));
+}
+
+/** 실사표 생성: 범위의 칸 재고를 스냅샷으로 뜬다. 같은 requestId 는 1장만. 겹치는 진행 중 실사표가 있으면 확인(confirmOverlap)을 요구 */
+export async function createCycleCount(
+  input: CountCreateInput,
+  actor: CurrentUser
+): Promise<{ id: string; duplicated: boolean; overlaps?: undefined } | { overlaps: CountOverlap[] }> {
   const dup = await prisma.cycleCount.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
   if (dup) return { id: dup.id, duplicated: true };
 
@@ -37,6 +82,10 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
     throw new CountError(
       `실사표는 한 장에 ${COUNT_LIMITS.maxLines.toLocaleString()}줄까지 만들 수 있습니다. 위치코드 앞부분(랙 단위)으로 범위를 좁히세요.`
     );
+  }
+  if (!input.confirmOverlap) {
+    const overlaps = await findOverlaps(prisma, balances);
+    if (overlaps.length > 0) return { overlaps };
   }
   const scope = [warehouse?.name, input.locationPrefix].filter(Boolean).join(" · ").slice(0, COUNT_LIMITS.maxScope);
 
@@ -202,8 +251,10 @@ export async function getCycleCount(id: string) {
     });
     current = new Map(bals.map((b) => [balanceKey(b.productId, b.locationId, b.expiryDate, b.lotDate, b.lotNo), b.quantity]));
   }
+  const overlaps = count.status === "COUNTING" ? await findOverlaps(prisma, lines, id) : [];
   return {
     count,
+    overlaps,
     lines: lines.map((l) => ({
       id: l.id,
       sku: l.product.sku,

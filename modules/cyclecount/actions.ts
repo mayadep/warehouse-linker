@@ -12,8 +12,10 @@ import {
 import { addFoundLine, cancelCycleCount, confirmCycleCount, CountError, createCycleCount, saveCount } from "./service";
 
 export type CountActionState = {
-  status: "idle" | "success" | "error";
+  /** confirm: 같은 칸을 세는 다른 진행 중 실사표가 있어 사용자 확인이 필요 (아직 안 만들어짐) */
+  status: "idle" | "success" | "error" | "confirm";
   message: string;
+  overlaps?: { id: string; countNo: string; createdByName: string | null; lines: number }[];
   /** 생성 성공 시 이동할 실사표 */
   countId?: string;
   ts?: number;
@@ -42,6 +44,14 @@ export async function createCountAction(_p: CountActionState, fd: FormData): Pro
   if (!parsed.ok) return fail(parsed.message);
   return run(async () => {
     const r = await createCycleCount(parsed.data, user);
+    if (r.overlaps) {
+      return {
+        status: "confirm",
+        message: "같은 칸을 세는 다른 진행 중 실사표가 있습니다. 담당자와 조율한 뒤 그래도 만들지 선택하세요.",
+        overlaps: r.overlaps,
+        ts: Date.now(),
+      };
+    }
     return { status: "success", message: r.duplicated ? "이미 만든 실사표입니다." : "실사표를 만들었습니다.", countId: r.id, ts: Date.now() };
   });
 }
