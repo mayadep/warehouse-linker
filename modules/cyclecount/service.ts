@@ -82,6 +82,10 @@ export async function createCycleCount(input: CountCreateInput, actor: CurrentUs
       // 실사번호 충돌(동시 생성)은 번호를 올려 다시 시도
       const err = e as { code?: string; meta?: { target?: unknown } };
       if (err.code === "P2002" && String(err.meta?.target).includes("countNo")) continue;
+      if (err.code === "P2002" && String(err.meta?.target).includes("requestId")) {
+        const again = await prisma.cycleCount.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+        if (again) return { id: again.id, duplicated: true };
+      }
       throw e;
     }
   }
@@ -179,6 +183,8 @@ export async function getCycleCount(id: string) {
 }
 
 async function requireCounting(tx: Prisma.TransactionClient, countId: string) {
+  // 공유 잠금: 확정·취소(UPDATE)가 진행 중이면 끝날 때까지 기다린 뒤 최신 상태를 읽는다
+  await tx.$queryRaw`SELECT "id" FROM "CycleCount" WHERE "id" = ${countId} FOR SHARE`;
   const c = await tx.cycleCount.findUnique({ where: { id: countId }, select: { id: true, countNo: true, status: true } });
   if (!c) throw new CountError("존재하지 않는 실사표입니다.");
   if (c.status !== "COUNTING") {
@@ -259,6 +265,11 @@ export async function confirmCycleCount(input: { countId: string; version: numbe
         select: { id: true, productId: true, locationId: true, expiryDate: true, lotDate: true, lotNo: true, countedQty: true },
         orderBy: [{ productId: "asc" }, { id: "asc" }], // 상품 순서 고정 (동시 작업과의 교착 방지)
       });
+      // 칸 재고를 읽기 전에 대상 상품을 id 순으로 모두 잠근다 → 읽은 값 이후 출고·입고가 끼어들지 못함
+      const productIds = [...new Set(lines.filter((l) => l.countedQty !== null).map((l) => l.productId))].sort();
+      if (productIds.length > 0) {
+        await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" = ANY(${productIds}::text[]) ORDER BY "id" FOR UPDATE`;
+      }
       let plus = 0;
       let minus = 0;
       let adjusted = 0;

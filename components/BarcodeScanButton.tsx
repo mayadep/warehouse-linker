@@ -61,7 +61,10 @@ function ScanDialog({ onClose, onDetect }: { onClose: () => void; onDetect: (cod
         return;
       }
       const video = videoRef.current;
-      if (!video || stopped) return;
+      if (!video || stopped) {
+        stream.getTracks().forEach((t) => t.stop()); // 권한 승인 전에 창이 닫힌 경우 카메라를 끈다
+        return;
+      }
       video.srcObject = stream;
       await video.play().catch(() => {});
 
